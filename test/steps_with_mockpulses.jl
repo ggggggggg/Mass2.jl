@@ -45,7 +45,7 @@ push!(steps, HistogramStep(update_histogram, [:energy_hist, :selection_good, :en
 push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies],[:calibration],:selection_good, sum, 5000, true))
 push!(steps, ThresholdStep(compute_whitenoise_filter, [:pulse, :selection_good], [:whitenoise_filter], :selection_good, sum, 100, true))
 push!(steps, PerPulseStep(filter1lag, [:pulse, :whitenoise_filter], [:filt_value]))
-# push!(steps, FreeMemoryStep())
+push!(steps, FreeMemoryStep())
 
 push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
