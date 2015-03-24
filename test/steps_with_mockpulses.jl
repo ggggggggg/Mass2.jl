@@ -25,16 +25,16 @@ function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby 
 end
 
 # generate a spectra with multiple peaks for calibration testing
-dist_energies = [4000:700:9000]
+dist_energies = [4000,4700,5500,6000,6800,7500,8200,9600,10000]
 dist_filt_values = 5*dist_energies.^0.8
-dist_use_inds = [2,3,5,8]
+dist_use_inds = [2,3,5,9]
 dist_use_filt_values = dist_filt_values[dist_use_inds]
 dist_use_energies = dist_energies[dist_use_inds]
 filt_value_distribution = MixtureModel([Normal(mu,1) for mu in dist_filt_values])
 
 steps = AbstractStep[]
 
-push!(steps, MockPulsesStep(TwoExponentialPulseGenerator{Int}(520, 100, 50, 200,10, 13.3, 100000,520,filt_value_distribution,30,0,1000.,0,0.5), 1000, [:pulse,:rowstamp]))
+push!(steps, MockPulsesStep(TupacLikeTwoExponentialPulseGenerator(Int, filt_value_distribution), 1000, [:pulse,:rowstamp]))
 push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
@@ -71,9 +71,9 @@ c[:pulse] = RunningVector(Vector{Int})
 c[:rowstamp] = RunningVector(Int)
 c[:pre_samples] = 100
 c[:frame_time] = 1/100000
-c[:peak_index_criteria] = (183,198)
-c[:pretrig_rms_criteria] = (0.0,15.)
-c[:postpeak_deriv_criteria] = (0.0,100.0)
+c[:peak_index_criteria] = (170,200)
+c[:pretrig_rms_criteria] = (0.0,10.)
+c[:postpeak_deriv_criteria] = (0.0,50.0)
 c[:known_energies] = dist_use_energies
 
 g = graph(steps)
@@ -91,7 +91,7 @@ stepelapsed = Array(Float64, length(steps))
 workdone = Array(Any, length(steps))
 errors = Any[]
 close(jldopen(filename(c),"w")) # wipe the test file
-for i = 1:7
+for i = 1:10
 	println("** loop iteration $i")
 	#do steps
 	for (j,s) in enumerate(steps)

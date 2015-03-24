@@ -85,7 +85,9 @@ function compute_summary(pulseiterator, Npre, frame_time)
         summary.postpeak_deriv[p] = postpeak_deriv
         summary.peak_index[p] = peak_idx
         summary.min_value[p] = min_val
-        if peak_val > ptm
+        if ptm < 0
+            summary.peak_value[p] = peak_val
+        elseif peak_val > ptm
             summary.peak_value[p] = peak_val - uint16(ptm)
         else
             summary.peak_value[p] = uint16(0)

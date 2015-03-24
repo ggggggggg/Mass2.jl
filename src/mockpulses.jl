@@ -13,14 +13,19 @@ type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
     amplitude_distribution::Distribution
     numrows::Int
     rownumber::Int
-    quiescent_value::Float64
+    quiescent_average::Float64
+    quiescent_modulation_period_points::Float64
+    quiescent_modulation_amplitude::Float64
     last_rowstamp::Int
     trigger_points_std::Float64 # std of where it triggers relative to actualy arrival time in points (aka frames)
-    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value,last_rowstamp,trigger_points_std)
+    d_amp_d_quiescent::Float64 # pretrigger mean/amplitude correlation
+    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,trigger_points_std,d_amp_d_quiescent)
     	rise_points<fall_points || error("rise_points should be less than fall points")
-    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value,last_rowstamp,trigger_points_std)
+    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,trigger_points_std,d_amp_d_quiescent)
     end
 end
+TupacLikeTwoExponentialPulseGenerator{T}(::Type{T},distribution) = TwoExponentialPulseGenerator{T}(520, 100, 50, 200, 5, 13.5,
+	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -1e-4)
 
 function two_exponential_pulses(
 	points::Int, rise_points, fall_points,quiescent_value, arrival_point::Tuple, amplitude::Tuple)
@@ -58,14 +63,27 @@ to_type_and_white_noise{T<:Integer}(::Type{T}, noise_fwhm, pulse) = convert(Vect
 
 function getcleanpulse{T}(pg::TwoExponentialPulseGenerator{T}, amp)
 	to_type_and_white_noise(T, pg.noise_fwhm, 
-		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_value, (pg.pre_rise_points,), (amp,)))
+		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_average, (pg.pre_rise_points,), (amp,)))
 end
 function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
 	points_from_last, points_to_next = rand(Exponential(pg.samples_per_second/pg.event_rate_hz),2)
-	amplitudes = tuple(rand(pg.amplitude_distribution,3)...)
 	arrival_points = (pg.pre_rise_points-pg.min_points_since_last_pulse-points_from_last
 		, pg.pre_rise_points+rand(Normal(0,pg.trigger_points_std)), pg.pre_rise_points+points_to_next)
-	pulse = two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_value, arrival_points, amplitudes)
+
+	last_rowstamp = pg.last_rowstamp
+	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)
+	pg.last_rowstamp=rowstamp
+
+	quiescent_value_modulation = pg.quiescent_modulation_amplitude*sinpi(2*rowstamp/(pg.quiescent_modulation_period_points*pg.numrows))
+	quiescent_value = pg.quiescent_average+quiescent_value_modulation
+
+	amplitudes = rand(pg.amplitude_distribution,3)
+
+	# introducw pretrigger mean/amplitude correlation
+	amplitudes .+= amplitudes.*pg.d_amp_d_quiescent*quiescent_value_modulation
+	amplitudes_tuple = tuple(amplitudes...)
+
+	pulse = two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, quiescent_value, arrival_points, amplitudes_tuple)
 	pulse = to_type_and_white_noise(T, pg.noise_fwhm, pulse)
 	last_rowstamp = pg.last_rowstamp
 	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)
