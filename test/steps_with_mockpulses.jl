@@ -97,6 +97,7 @@ for i = 1:10
 	for (j,s) in enumerate(steps)
 		tstart = time()
 		# try
+		println(j)
 			workdone[j] = dostep(s,c)
 		# catch ex
 		# 	showerror(STDOUT, ex, backtrace())

@@ -6,6 +6,6 @@ using Base.Test
 
 
 
-include("runningvectors.jl")
+include("test_runningvectors.jl")
 include("mockpulses.jl")
 include("steps_with_mockpulses.jl")

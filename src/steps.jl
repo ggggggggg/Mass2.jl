@@ -1,4 +1,4 @@
-using RunningVectors, Graphs, HDF5, JLD, GraphViz
+using RunningVectors, HDF5, JLD, GraphViz, Graphs
 import JLD: JldGroup, JldFile, JldDataset
 
 const DONETHRU_MAX = typemax(Int)-1
@@ -40,7 +40,6 @@ type PerPulseStep <: AbstractStep
 	inputs::Vector{Symbol}
 	outputs::Vector{Symbol}
 end
-PerPulseStep(func, inputs, outputs) = PerPulseStep(func, inputs, [is_])
 type ToJLDStep <:AbstractStep
 	inputs::Vector{Symbol}
 end	
@@ -133,12 +132,23 @@ end
 function dostep(s::ThresholdStep, c::Channel)
 	s.do_if_able || (return false)
 	other_inputs_exist(s,c) || (return false)
+	println("A")
 	n = s.to_watch_func(c[s.to_watch])
 	if n >= s.threshold
+		println("b")
+
 		s.do_if_able = false
+		println("c")
+
 		f = getfunction(s)
+
+		println("d")
 		r=1:s.threshold
-		fout = f(inputs(s,c,r)...)
+		println(("e",r,f, typeof(f)))
+		inp = inputs(s,c,r)
+		println("g")
+		fout = f(inp...)
+		println("f")
 		if length(outputs(s)) == 1 # fout will be a value
 			c[outputs(s)[1]] =  fout
 		elseif length(outputs(s)) > 1
@@ -303,7 +313,7 @@ function add_step!(g, s)
     end
     g
 end
-function graph(steps::Vector{AbstractStep})
+function Graphs.graph(steps::Vector{AbstractStep})
 	g=inclist(ExVertex, is_directed=true)
 	for s in steps
     	add_step!(g,s)
