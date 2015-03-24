@@ -132,23 +132,12 @@ end
 function dostep(s::ThresholdStep, c::Channel)
 	s.do_if_able || (return false)
 	other_inputs_exist(s,c) || (return false)
-	println("A")
 	n = s.to_watch_func(c[s.to_watch])
 	if n >= s.threshold
-		println("b")
-
 		s.do_if_able = false
-		println("c")
-
 		f = getfunction(s)
-
-		println("d")
 		r=1:s.threshold
-		println(("e",r,f, typeof(f)))
-		inp = inputs(s,c,r)
-		println("g")
-		fout = f(inp...)
-		println("f")
+		fout = f(inputs(s,c,r)...)
 		if length(outputs(s)) == 1 # fout will be a value
 			c[outputs(s)[1]] =  fout
 		elseif length(outputs(s)) > 1
