@@ -33,7 +33,8 @@ dist_use_energies = dist_energies[dist_use_inds]
 filt_value_distribution = MixtureModel([Normal(mu,1) for mu in dist_filt_values])
 
 steps = AbstractStep[]
-push!(steps, MockPulsesStep(TwoExponentialPulseGenerator{Int}(520, 100, 50, 200,10, 13.3, 100000,520,filt_value_distribution,30,0,1000), 1000, [:pulse,:rowstamp],0))
+
+push!(steps, MockPulsesStep(TwoExponentialPulseGenerator{Int}(520, 100, 50, 200,10, 13.3, 100000,520,filt_value_distribution,30,0,1000.,0,0.5), 1000, [:pulse,:rowstamp]))
 push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
@@ -85,7 +86,7 @@ workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0
 workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) "*@sprintf("%0.2f ms ",1e3*t)*(n?"did":"skipped")
 workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep "*@sprintf("%0.2f ms ",1e3*t)
 
-# savegraph("graph",g)
+savegraph("graph",g)
 stepelapsed = Array(Float64, length(steps))
 workdone = Array(Any, length(steps))
 errors = Any[]

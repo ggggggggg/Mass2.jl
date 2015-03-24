@@ -61,7 +61,6 @@ type MockPulsesStep <: AbstractStep
 	pg::TwoExponentialPulseGenerator{Int}
 	pulses_per_step::Int
 	outputs::Vector{Symbol}
-	last_rowstamp::Int
 end
 type FreeMemoryStep <: AbstractStep
 end
@@ -157,9 +156,7 @@ end
 graphlabel(s::MockPulsesStep) = "MockPulsesStep"
 inputs(s::MockPulsesStep) = []
 function dostep(s::MockPulsesStep, c::Channel)
-	pulses = gettriggeredpulse(s.pg,s.pulses_per_step)
-	rowstamps = getrowstamp(s.pg, s.pulses_per_step, s.last_rowstamp)
-	s.last_rowstamp = rowstamps[end]
+	pulses, rowstamps = gettriggeredpulse!(s.pg,s.pulses_per_step)
 	append!(c[s.outputs[1]], pulses)
 	append!(c[s.outputs[2]], rowstamps)
 	s.pulses_per_step

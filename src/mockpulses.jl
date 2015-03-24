@@ -1,7 +1,7 @@
 using Distributions
 abstract PulseGenerator
 
-immutable TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
+type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
 	record_length::Int
     pre_rise_points::Int
 	rise_points::Float64
@@ -14,9 +14,11 @@ immutable TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
     numrows::Int
     rownumber::Int
     quiescent_value::Float64
-    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value)
+    last_rowstamp::Int
+    trigger_points_std::Float64 # std of where it triggers relative to actualy arrival time in points (aka frames)
+    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value,last_rowstamp,trigger_points_std)
     	rise_points<fall_points || error("rise_points should be less than fall points")
-    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value)
+    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_value,last_rowstamp,trigger_points_std)
     end
 end
 
@@ -58,15 +60,28 @@ function getcleanpulse{T}(pg::TwoExponentialPulseGenerator{T}, amp)
 	to_type_and_white_noise(T, pg.noise_fwhm, 
 		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_value, (pg.pre_rise_points,), (amp,)))
 end
-function gettriggeredpulse{T}(pg::TwoExponentialPulseGenerator{T})
-	last_arrival, next_arrival = rand(Exponential(pg.samples_per_second/pg.event_rate_hz),2)
+function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
+	points_from_last, points_to_next = rand(Exponential(pg.samples_per_second/pg.event_rate_hz),2)
 	amplitudes = tuple(rand(pg.amplitude_distribution,3)...)
-	arrival_points = (pg.pre_rise_points-pg.min_points_since_last_pulse-last_arrival
-		, pg.pre_rise_points, pg.pre_rise_points+next_arrival)
+	arrival_points = (pg.pre_rise_points-pg.min_points_since_last_pulse-points_from_last
+		, pg.pre_rise_points+rand(Normal(0,pg.trigger_points_std)), pg.pre_rise_points+points_to_next)
 	pulse = two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_value, arrival_points, amplitudes)
-	to_type_and_white_noise(T, pg.noise_fwhm, pulse)
+	pulse = to_type_and_white_noise(T, pg.noise_fwhm, pulse)
+	last_rowstamp = pg.last_rowstamp
+	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)
+	pg.last_rowstamp=rowstamp
+	pulse, rowstamp
 end
-gettriggeredpulse(pg,n) = [gettriggeredpulse(pg) for i=1:n]
+function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T},n)
+	pulses = Array(Vector{T},n)
+	rowstamps = Array(Int, n)
+	for i = 1:n
+		pulse, rowstamp = gettriggeredpulse!(pg)
+		pulses[i] = pulse
+		rowstamps[i] = rowstamp
+	end
+	pulses, rowstamps
+end
 times_s(pg) = range(0,1/pg.samples_per_second, pg.record_length)
 
 # Base.start(pg::TwoExponentialPulseGenerator) = 0.0
@@ -77,11 +92,10 @@ times_s(pg) = range(0,1/pg.samples_per_second, pg.record_length)
 # end
 # Base.done(pg::TwoExponentialPulseGenerator, last_arrival::Float64) = false
 
-function getrowstamp(pg::TwoExponentialPulseGenerator,n::Int, last_rowstamp::Int=0)
-	rowstamp_diffs = pg.numrows*rand(Exponential(pg.samples_per_second/pg.event_rate_hz),n)
-	last_rowstamp = pg.numrows*div(last_rowstamp,pg.numrows)+pg.rownumber # make sure rowstamp reflect the correct row
-	rowstamp_diffs[1]+=last_rowstamp
-	cumsum(convert(Vector{Int}, round(rowstamp_diffs)))
-end
-
+# function getrowstamp(pg::TwoExponentialPulseGenerator,n::Int, last_rowstamp::Int=0)
+# 	rowstamp_diffs = pg.numrows*rand(Exponential(pg.samples_per_second/pg.event_rate_hz),n)
+# 	last_rowstamp = pg.numrows*div(last_rowstamp,pg.numrows)+pg.rownumber # make sure rowstamp reflect the correct row
+# 	rowstamp_diffs[1]+=last_rowstamp
+# 	cumsum(convert(Vector{Int}, round(rowstamp_diffs)))
+# end
 
