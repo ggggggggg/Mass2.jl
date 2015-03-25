@@ -192,22 +192,20 @@ outputs(s::ToJLDStep) = []
 function dostep(s::ToJLDStep,c::Channel)
 	jld = jldopen(filename(c),"r+")
 	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
-		if string(sym) in names(jld)
-			d=d_require(jld, string(sym), eltype(value)) 
-			# account for the fact that the dataset is created with 1 element, not zero 			
-			start = length(d)==1 ? 1 : length(d)+1
-			r = start:length(value)
-			println("$sym $r")
-			if length(r)>0
-				println("writing $sym[$r] to $jld")
-				d_extend(jld, string(sym), value[r],r)
-			end
+		d=d_require(jld, string(sym), eltype(value)) 
+		# account for the fact that the dataset is created with 1 element, not zero 			
+		start = length(d)==1 ? 1 : length(d)+1
+		r = start:length(value)
+		if length(r)>0
+			println("writing $sym[$r] to $jld")
+			d_extend(d, value[r],r)
 		end
 	end
-	for (sym, value) in  zip(other_inputs(s),other_inputs(s,c))
-		info("writing $sym to $jld, probably too often")
-		update!(jld, string(sym), value)
-	end
+	# JLD.delete! doesn't work well enough to to this, it can leave spare references around
+	# for (sym, value) in  zip(other_inputs(s),other_inputs(s,c))
+	# 	# warn("doesn't work if you do it more than once")
+	# 	# update!(jld, string(sym), value)
+	# end
 	close(jld)
 	1 # return workunits info
 end #dostep
@@ -305,6 +303,7 @@ end
 # figure out what we can free up
 donethru(x::AbstractRunningVector) = length(x)
 donethru(x::Vector{Float64}) = DONETHRU_MAX
+donethru(x)=DONETHRU_MAX
 earliest_needed_index(x) = donethru(x)+1
 function earliest_needed_index(c::Channel, q::Symbol,p::Symbol)
 	if q in keys(c)
