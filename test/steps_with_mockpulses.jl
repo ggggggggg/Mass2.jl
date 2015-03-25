@@ -79,16 +79,16 @@ c[:known_energies] = dist_use_energies
 g = graph(steps)
 
 
-workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f/s",n/t)
-workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f/s",length(n)/t)
-workstat(n, s::ToJLDStep, t) = "ToJLDStep "*@sprintf("%0.2f ms",1e3*t)
-workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0.2f/s",length(n)/t)
-workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) "*@sprintf("%0.2f ms ",1e3*t)*(n?"did":"skipped")
-workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep "*@sprintf("%0.2f ms ",1e3*t)
+workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::ToJLDStep, t) = "ToJLDStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
+workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) $n executions at "*@sprintf("%0.2f executions/s",n/t)
+workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
 
 savegraph("graph",g)
-stepelapsed = Array(Float64, length(steps))
-workdone = Array(Any, length(steps))
+workdone_cumulative = Array(Int, length(steps))
+stepelapsed_cumulative = Array(Float64, length(steps))
 errors = Any[]
 close(jldopen(filename(c),"w")) # wipe the test file
 for i = 1:10
@@ -97,15 +97,18 @@ for i = 1:10
 	for (j,s) in enumerate(steps)
 		tstart = time()
 		# try
-		println(j)
-			workdone[j] = dostep(s,c)
+		wu = workunits(dostep(s,c))
+		stepelapsed = time()-tstart
+		workdone_cumulative[j] += wu 
+		stepelapsed_cumulative[j] += stepelapsed
 		# catch ex
 		# 	showerror(STDOUT, ex, backtrace())
 		# 	push!(errors, ex)
 		# end
-		stepelapsed[j] = time()-tstart
+		# workdone_cumulative+=workdone
+		# stepelapsed_cumulative+=stepelapsed
 	end
-	[println(workstat(workdone[i], steps[i], stepelapsed[i])) for i = 1:length(steps)];
+	[println("step $i: "*workstat(workdone_cumulative[i], steps[i], stepelapsed_cumulative[i])) for i = 1:length(steps)];
 end
 jld = jldopen(filename(c), "r+")
 

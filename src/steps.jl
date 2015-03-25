@@ -197,7 +197,9 @@ function dostep(s::ToJLDStep,c::Channel)
 			# account for the fact that the dataset is created with 1 element, not zero 			
 			start = length(d)==1 ? 1 : length(d)+1
 			r = start:length(value)
+			println("$sym $r")
 			if length(r)>0
+				println("writing $sym[$r] to $jld")
 				d_extend(jld, string(sym), value[r],r)
 			end
 		end
