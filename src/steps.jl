@@ -1,5 +1,5 @@
 using RunningVectors, HDF5, JLD, GraphViz, Graphs
-import JLD: JldGroup, JldFile, JldDataset
+import JLD: JldGroup, JldFile, JldDataset, HDF5Dataset
 
 const DONETHRU_MAX = typemax(Int)-1
 
@@ -169,50 +169,23 @@ function dostep(s::FreeMemoryStep, c::Channel)
 		d=c[q]
 		freeuntil!(d,min(earliest_needed_index(q,c,g)-1,length(d)))
 	end
+	1 # return 1 unit of work done
 end
 
-# todisk
-function g_require(parent::Union(JldFile,JldGroup), name::ASCIIString)
-    exists(parent, name) ? (return parent[name]) : g_create(parent.plain, name)
-end
-# Create a new or update an existing dataset within an HDF5 object
-# extends the dataset if required
-function d_extend(parent::Union(JldFile,JldGroup), name::ASCIIString, value::Vector, range::UnitRange)
-	d = d_require(parent, name, value)
-	set_dims!(parent[name].plain, (maximum(range),))
+# JLD/HDF5 helper functions for ToJLDStep
+function d_extend(d::HDF5Dataset, value::Vector, range::UnitRange)
+	set_dims!(d, (maximum(range),))
 	d[range] = value
 	d
 end
-d_extend(parent::Union(JldFile,JldGroup), name::ASCIIString, value::Vector) = d_extend(parent, name, value, endof(parent[name])+1:endof(parent[name])+length(value))
-d_update(parent::Union(JldFile,JldGroup), name::ASCIIString, value::Vector) = d_extend(parent, name, value, 1:endof(value))
-function d_require(parent::Union(JldFile,JldGroup), name, value::Vector,chunksize = 10000)
-	dims = ((1,), (-1,)) # create a minimum size dataset, zero isn't allowed
-	exists(parent,name) ? parent[name] : d_create(parent.plain, name, eltype(value), dims, "chunk", (chunksize,))
-end
-function d_require(parent::Union(JldFile,JldGroup), name, elementype::Type ,chunksize = 10000)
-	dims = ((1,), (-1,)) # create a minimum size dataset, zero isn't allowed
+d_extend(d::JldDataset, value::Vector, range::UnitRange) = d_extend(d.plain, value, range)
+function d_require(parent::Union(JldFile,JldGroup), name, elementype::Type ,chunksize = 1000)
+	dims = ((1,), (-1,)) # create a minimum size 1d dataset with largest possible maximum dimension, zero is not allowed
 	exists(parent,name) ? parent[name] : d_create(parent.plain, name, elementype, dims, "chunk", (chunksize,))
 end
-# Create a new or update an existing attribute within an HDF5 object
-# a_require will create the attribute if it doesn't exist, or assert that the existing attribute is equal to value
-function a_require(parent::Union(JldFile,JldGroup),name::ASCIIString,value)
-    if exists(attrs(parent), name)
-    	a_read(parent, name) == value ? (return value) : error("new value $value != existing value $(a_read(parent,name)) for attr $parent[$name]")
-	end
-    attrs(parent)[name] = value	
-end
-# a_update will create or replace and existing attribute with value
-function a_update(parent::Union(JldFile,JldGroup), name::ASCIIString, h::Histogram)
-	a_update(parent, name*"_bin_centers",collect(bin_centers(h)))
-	a_update(parent, name*"_counts",counts(h))
-end
-function a_update(parent::Union(JldFile,JldGroup),name::ASCIIString,value)
-    if exists(attrs(parent.plain), name)
-        old_value = a_read(parent, name)
-    	old_value == value && (return value)
-    	a_delete(parent.plain, name)
-	end
-    attrs(parent.plain)[name] = value
+function update!(parent::Union(JldFile,JldGroup), name, value)
+	exists(parent, name) && delete!(parent[name])
+	parent[name]=value
 end
 graphlabel(s::ToJLDStep) = "to JLD"
 outputs(s::ToJLDStep) = []
@@ -220,21 +193,21 @@ function dostep(s::ToJLDStep,c::Channel)
 	jld = jldopen(filename(c),"r+")
 	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
 		if string(sym) in names(jld)
-			d=d_require(jld, string(sym), eltype(value))
-			r = length(d)+1:length(value)
-		else # account for the fact that the dataset is created with 1 element, not zero 
-			d=d_require(jld, string(sym), eltype(value))
-			r = 1:length(value)
-		end
-		if length(r)>0
-			d_extend(jld, string(sym), value[r],r)
+			d=d_require(jld, string(sym), eltype(value)) 
+			# account for the fact that the dataset is created with 1 element, not zero 			
+			start = length(d)==1 ? 1 : length(d)+1
+			r = start:length(value)
+			if length(r)>0
+				d_extend(jld, string(sym), value[r],r)
+			end
 		end
 	end
 	for (sym, value) in  zip(other_inputs(s),other_inputs(s,c))
 		info("writing $sym to $jld, probably too often")
-		a_update(jld, string(sym), value)
+		update!(jld, string(sym), value)
 	end
 	close(jld)
+	1 # return workunits info
 end #dostep
 
 default_vertex_attrs = AttributeDict()
@@ -357,3 +330,9 @@ function earliest_needed_index(parent::Symbol, c::Channel, g::AbstractGraph)
 	filter!(x->x != nothing, eni)
 	isempty(eni)?length(c[parent])+1:minimum(eni)
 end
+
+
+# for work reporting
+workunits(x::Int) = x
+workunits(r::Range) = length(r)
+workunits(x::Bool) = convert(Int,x)

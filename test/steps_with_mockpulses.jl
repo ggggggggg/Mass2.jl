@@ -39,7 +39,7 @@ push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
 push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
-push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
+push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy, :energy_hist]))
 push!(steps, HistogramStep(update_histogram, [:filt_value_hist, :selection_good, :filt_value]))
 push!(steps, HistogramStep(update_histogram, [:energy_hist, :selection_good, :energy]))
 push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies],[:calibration],:selection_good, sum, 5000, true))
