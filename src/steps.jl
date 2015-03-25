@@ -311,14 +311,19 @@ function Graphs.graph(steps::Vector{AbstractStep})
 end
 function savegraph(fname,g)
 dot = to_dot(g)
-gviz = GraphViz.Graph(dot)
-GraphViz.layout!(gviz,engine="dot")
-	open("$fname.svg","w") do f 
-	       GraphViz.writemime(f, MIME"image/svg+xml"(),gviz)
-	end #do
-	open("$fname.dot","w") do f
-		write(f,dot)
-	end
+open("$fname.dot","w") do f
+	write(f,dot)
+end
+# the following code is correct and useful, but it conflicts with @pyimport
+# so I'm commenting it until that is resolved
+# gviz = GraphViz.Graph(dot)
+# GraphViz.layout!(gviz,engine="dot")
+# 	open("$fname.svg","w") do f 
+# 	       GraphViz.writemime(f, MIME"image/svg+xml"(),gviz)
+# 	end #do
+# 	open("$fname.png","w") do f 
+# 	       GraphViz.writemime(f, MIME"image/png"(),gviz)
+# 	end #do
 end
 
 
