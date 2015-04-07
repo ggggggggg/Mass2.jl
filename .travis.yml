@@ -6,7 +6,7 @@ julia:
   - release
 #  - nightly
 before_install:
-  - sudo apt-get install python-numpy python-scipy gfortran-4.4 -y
+  - sudo apt-get install python-numpy python-scipy libpcre3-dev gfortran -y
   - dpkg --get-selections | grep -v deinstall # list installed packages
 notifications:
   email: false
