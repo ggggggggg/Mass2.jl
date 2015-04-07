@@ -5,6 +5,8 @@ os:
 julia:
   - release
 #  - nightly
+before_install:
+  - sudo apt-get install python-numpy python-scipy gfortran-4.4 -y
 notifications:
   email: false
 # uncomment the following lines to override the default test script
