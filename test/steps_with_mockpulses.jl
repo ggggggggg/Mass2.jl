@@ -42,7 +42,7 @@ push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criter
 push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
 push!(steps, HistogramStep(update_histogram, [:filt_value_hist, :selection_good, :filt_value]))
 push!(steps, HistogramStep(update_histogram, [:energy_hist, :selection_good, :energy]))
-push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies],[:calibration],:selection_good, sum, 5000, true))
+push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies],[:calibration],:filt_value_hist, counted, 5000, true))
 push!(steps, ThresholdStep(compute_whitenoise_filter, [:pulse, :selection_good], [:whitenoise_filter], :selection_good, sum, 100, true))
 push!(steps, PerPulseStep(filter1lag, [:pulse, :whitenoise_filter], [:filt_value]))
 push!(steps, FreeMemoryStep())
