@@ -9,3 +9,4 @@ using Base.Test
 include("test_runningvectors.jl")
 include("mockpulses.jl")
 include("steps_with_mockpulses.jl")
+include("calibration.jl")

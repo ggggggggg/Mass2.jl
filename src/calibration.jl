@@ -26,30 +26,54 @@ function peakassign(locations_arb, locations_true)
 @assert(issorted(locations_arb))
 @assert(issorted(locations_true))
 @assert(length(locations_arb)>=length(locations_true))
-combos = combinations(locations_arb, length(locations_true))
-length(combos)==1 && return (first(combos), inf)
+combos = combinations(1:length(locations_arb), length(locations_true))
+length(combos)==1 && return (locations_arb[first(combos)], 0.0)
+
+assert(!(0 in locations_true)) # don't pass zero and force zero
+assert(!(0 in locations_arb))
+
+log_locations_arb = log(locations_arb)
+log_locations_true = log(locations_true)
 
 best_combo = first(combos)
 best_fom = realmax(Float64)
 for c in combos
-	fom = peakassign_fig_of_merit(c, locations_true)
+	cu = log_locations_arb[c]
+	fom = peakassign_fig_of_merit(cu, log_locations_true)
 	if fom < best_fom
 		best_fom = fom
 		best_combo = c
 	end
 end
-best_combo, best_fom
+locations_arb[best_combo], best_fom
 end
-
 function peakassign_fig_of_merit(x, y)
-	# average fractional error trying to predict the y value of the middle of 3 points using the slope
-	# from the outer two points and the x value of the middle point
-	err = 0.0
-	for i = 1:length(y)-2
-		yip1_prediction = y[i]+(y[i+2]-y[i])*(x[i+1]-x[i])/(x[i+2]-x[i])
-		err += abs(1-y[i+1]/yip1_prediction)
+	n = length(x) > 2 ? 2 : 1
+	p = polyfit(x,y,n)
+	std(polyresiduals(p,x,y)./y)
+end
+# should remove these and depend on Polynomails.jl
+function polyfit(x, y, n)
+  A = [ float(x[i])^p for i = 1:length(x), p = 0:n ]
+  A \ y
+end
+function polyval(p,x::Number)
+	y = zero(promote_type(eltype(p), eltype(x)))
+	for i=1:length(p)
+		y+=p[i]*x^(i-1)
 	end
-	err /= length(y-2)
+	y
+end
+function polyval(p,x::AbstractArray)
+	y = zeros(promote_type(eltype(p), eltype(x)), length(x))
+	for i = 1:length(x)
+		y[i] = polyval(p,x[i])
+	end
+	y
+end
+function polyresiduals(p,x,y)
+	yp = polyval(p,x)
+	residuals = y-yp
 end
 
 @pyimport scipy.signal as scipysignal
@@ -77,14 +101,9 @@ function findpeaks(hist::Histogram)
 end
 
 
-function calibrate_nofit(hist::Histogram, known_energies; forcezero=true)
+function calibrate_nofit(hist::Histogram, known_energies)
 	peak_inds, peak_x = findpeaks(hist)
 	println((peak_inds, peak_x))
-	if forcezero
-		assert(!(0 in known_energies)) # don't pass zero and force zero
-		unshift!(peak_x, 0)
-		unshift!(known_energies, 0)
-	end
 	shortened_sorted_peak_x = sort(length(peak_x)>15?peak_x[1:15]:peak_x)
 	best_combo, best_fom = peakassign(sort(shortened_sorted_peak_x), known_energies)
 
