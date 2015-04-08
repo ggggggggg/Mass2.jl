@@ -4,7 +4,7 @@ h = Histogram(bin_edges_v)
 
 @test all([isapprox(bin_edges(h)[i], bin_edges_v[i]) for i = 1:length(bin_edges_v)])
 bin_centers_v = (bin_edges_v[2:end]+bin_edges_v[1:end-1])*0.5
-@test all([isapprox(bin_centers(h)[i], bin_edges_v[i]) for i = 1:length(bin_edges_v)-1])
+@test all([isapprox(bin_centers(h)[i], bin_centers_v[i]) for i = 1:length(bin_edges_v)-1])
 @test isapprox(binsize(h),1.0)
 
 addcounts!(h, ones(100)*10)

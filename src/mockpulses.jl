@@ -1,4 +1,3 @@
-using Distributions
 abstract PulseGenerator
 
 type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
@@ -25,7 +24,8 @@ type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
     end
 end
 TupacLikeTwoExponentialPulseGenerator{T}(::Type{T},distribution) = TwoExponentialPulseGenerator{T}(520, 100, 50, 200, 5, 13.5,
-	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -1e-4)
+	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -0.0)
+# currently has no pretrigger mean pulseheight correlation
 
 function two_exponential_pulses(
 	points::Int, rise_points, fall_points,quiescent_value, arrival_point::Tuple, amplitude::Tuple)
@@ -63,12 +63,12 @@ to_type_and_white_noise{T<:Integer}(::Type{T}, noise_fwhm, pulse) = convert(Vect
 
 function getcleanpulse{T}(pg::TwoExponentialPulseGenerator{T}, amp)
 	to_type_and_white_noise(T, pg.noise_fwhm, 
-		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_average, (pg.pre_rise_points,), (amp,)))
+		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_average, (pg.pre_rise_points+1,), (amp,)))
 end
 function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
 	points_from_last, points_to_next = rand(Exponential(pg.samples_per_second/pg.event_rate_hz),2)
-	arrival_points = (pg.pre_rise_points-pg.min_points_since_last_pulse-points_from_last
-		, pg.pre_rise_points+rand(Normal(0,pg.trigger_points_std)), pg.pre_rise_points+points_to_next)
+	arrival_points = (pg.pre_rise_points-pg.min_points_since_last_pulse-points_from_last+1
+		, pg.pre_rise_points+rand(Normal(0,pg.trigger_points_std))+1, pg.pre_rise_points+points_to_next+1)
 
 	last_rowstamp = pg.last_rowstamp
 	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)

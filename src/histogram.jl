@@ -6,7 +6,7 @@ type Histogram
 end
 Histogram(x::Range) = Histogram(convert(FloatRange{Float64},x),zeros(Int, length(x)-1),0,0)
 bin_edges(h::Histogram) = h.x
-midpoints(r::Range) = convert(FloatRange{Float64},range(first(r)*step(r)/2,step(r),length(r)-1))
+midpoints(r::Range) = convert(FloatRange{Float64},range(first(r)+step(r)/2,step(r),length(r)-1))
 bin_centers(h::Histogram) = midpoints(h.x)
 binsize(h::Histogram) = step(h.x)
 function addcounts!(h::Histogram, events::Array) 
@@ -23,4 +23,10 @@ donethru(h::Histogram) = h.seen
 function update_histogram!(h::Histogram, selection, x)
 	addcounts!(h,x[selection])
 	addseen!(h,length(selection)-sum(selection))
+end
+
+
+function PyPlot.plot(h::Histogram)
+	figure()
+	plot(bin_centers(h), counts(h))
 end

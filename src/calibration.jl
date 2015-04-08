@@ -1,4 +1,3 @@
-using Dierckx, PyCall
 
 abstract AbstractCalibration
 
@@ -14,9 +13,28 @@ end
 iscalibrated(c::AbstractCalibration) = c.iscalibrated
 donethru(c::AbstractCalibration) = iscalibrated(c)?DONETHRU_MAX:0
 apply_calibration(c::CalibrationSpline1D, estimator) = apply_spline(c.spline, estimator)
+function PyPlot.plot(cal::CalibrationSpline1D) 
+	figure()
+	plot(cal.indicator, apply_spline(cal.spline, cal.indicator))
+	plot(cal.indicator, cal.known_energies,"o")
+	xlabel("indicator")
+	ylabel("energy")
+end
+
+function plotlog(cal::CalibrationSpline1D) 
+	figure()
+	x=log(cal.indicator)
+	y=log(cal.known_energies)
+	# plot(cal.indicator, apply_spline(cal.spline, cal.indicator))
+	plot(x, y,"o")
+	p = polyfit(x,y,2)
+	plot(x, polyval(p, x))
+	xlabel("indicator")
+	ylabel("energy")
+	title("peakassign_fig_of_merit $(peakassign_fig_of_merit(x,y))")
+end
 
 
-### CALIBRATION
 function peakassign(locations_arb, locations_true)
 # locations_arb is an array of possible peak locations in arbitrary units, assumed to have an unknown, 
 # nonlinear (but monotonic and smooth) relationship to locations_true
@@ -52,7 +70,7 @@ function peakassign_fig_of_merit(x, y)
 	p = polyfit(x,y,n)
 	std(polyresiduals(p,x,y)./y)
 end
-# should remove these and depend on Polynomails.jl
+# should remove these and depend on Polynomails.jl or CurveFit or something
 function polyfit(x, y, n)
   A = [ float(x[i])^p for i = 1:length(x), p = 0:n ]
   A \ y
@@ -76,48 +94,61 @@ function polyresiduals(p,x,y)
 	residuals = y-yp
 end
 
-@pyimport scipy.signal as scipysignal
-function findpeaks(y, length_scales; min_snr = 3, min_dist=-1)
-	# find peaks using scipy.signal.find_peaks_cwt
-	# then make sure any reported peaks are local maxima
-	# returnds indicies of peaks orderes from lowest to highest y value
-	raw_peakinds = int(scipysignal.find_peaks_cwt(y, length_scales, min_snr=min_snr))
-	peakinds = Int[]
-	min_dist == -1 && (min_dist = int(maximum(length_scales)/2))
-	for p in raw_peakinds
-		r = max(1,p-min_dist):min(length(y), p+min_dist)
-		local_max_ind = indmax(y[r])+first(r)-2
-		local_max_ind in peakinds || push!(peakinds, local_max_ind)
-	end
-	perm = sortperm(y[peakinds])
-	peakinds[perm]
+
+
+findpeaks(h::Histogram; fwhm=15,n=typemax(Int)) = findpeaks(bin_edges(h), counts(h), fwhm=fwhm,n=n)
+function findpeaks(bin_edges::Range, y::Vector; fwhm=15,n=typemax(Int))
+	k = UnivariateKDE(bin_edges, convert(Array{Float64,1},y))
+	findpeaks_(k,fwhm,n)
 end
 
+function findpeaks_(y::UnivariateKDE, fwhm,n)
+	# smooth y with a gaussian of FHWM=fwhm, return indicies of n peaks with highest density in smoothed version
+	σ = fwhm/sqrt(8*log(2))
+	d = Normal(0,σ)
+	smoothed = conv(y,d)
+	peakinds = findpeaks_(smoothed.density)
+	if length(peakinds)>n
+		peakinds = peakinds[end-n+1:end]
+	end
+	peakinds
+end
 
-function findpeaks(hist::Histogram) 
-	peak_inds = findpeaks(counts(hist),[2,4,8,16,32].*binsize(hist))
-	peak_x = bin_centers(hist)[peak_inds]
-	peak_inds, peak_x
+function findpeaks_{T}(y::Vector{T})
+	# find all local maxima, return a vector of indicies sorted by value of y at that indey
+	peakinds = Array(Int,0)
+	for i = 2:length(y)-1
+		if y[i-1]<y[i]>y[i+1]
+			push!(peakinds, i)
+		end
+	end
+	p = sortperm(y[peakinds])
+	peakinds[p]
+end
+
+plotpeaks(h::Histogram; fwhm=15, n=typemax(Int)) = plotpeaks(bin_edges(h), counts(h), fwhm=fwhm, n=n)
+function plotpeaks(bin_edges::Range, y::Vector; fwhm=15, n=typemax(Int))
+	k = UnivariateKDE(bin_edges, convert(Array{Float64,1},y))
+	peakinds = findpeaks_(k, fwhm, n)
+	peaky = midpoints(bin_edges)[peakinds]
+	figure()
+	plot(midpoints(bin_edges), y, label="y")
+	plot(midpoints(k.x), conv(k,Normal(0,fwhm/2.355)).density, label="smoothed")
+	plot(peaky, y[peakinds],"o",label="raw peaks")
+	plot(peaky, conv(k,Normal(0,fwhm/2.355)).density[peakinds],"o",label="smoothed peaks")
+	legend()
 end
 
 
 function calibrate_nofit(hist::Histogram, known_energies)
-	peak_inds, peak_x = findpeaks(hist)
-	println((peak_inds, peak_x))
-	shortened_sorted_peak_x = sort(length(peak_x)>15?peak_x[1:15]:peak_x)
-	best_combo, best_fom = peakassign(sort(shortened_sorted_peak_x), known_energies)
-
+	peak_inds = findpeaks(hist,fwhm=15, n=length(known_energies)+3) # find the largest peaks, at most 3 more than the number of known energies
+	# with a 15 unit gaussian applied for smoothing... this needs to be adjustable
+	# also we need to check if calibration works, and if not return a failed calibration object with debug info
+	peak_x = sort(bin_centers(hist)[peak_inds])
+	best_combo, best_fom = peakassign(sort(peak_x), known_energies)
 	CalibrationSpline1D(best_combo, known_energies)
 end
 
-function tempcal(arb, known, forcezero=true)
-	if forcezero
-		assert(!(0 in known)) # don't pass zero and force zero
-		unshift!(arb, 0)
-		unshift!(known, 0)
-	end
-	best_combo, best_fom = peakassign(arb, known)
-end
 
 function calc_spline(x,y)
 	spl = Spline1D(float(x),float(y),k=1,bc="extrapolate")

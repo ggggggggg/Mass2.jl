@@ -1,13 +1,8 @@
 using Mass2
 using Base.Test
 
-# write your own tests here
-@test 1 == 1
-
-
-
 include("test_runningvectors.jl")
 include("mockpulses.jl")
-include("steps_with_mockpulses.jl")
 include("calibration.jl")
 include("histogram.jl")
+include("steps_with_mockpulses.jl")

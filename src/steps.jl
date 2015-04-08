@@ -1,4 +1,4 @@
-using RunningVectors, HDF5, JLD, GraphViz, Graphs
+using RunningVectors
 import JLD: JldGroup, JldFile, JldDataset, HDF5Dataset
 
 const DONETHRU_MAX = typemax(Int)-1
