@@ -6,11 +6,12 @@ type Histogram
 end
 Histogram(x::Range) = Histogram(convert(FloatRange{Float64},x),zeros(Int, length(x)-1),0,0)
 bin_edges(h::Histogram) = h.x
-midpoints(r::Range) = convert(FloatRange{Float64},range(first(r)+step(r)/2,step(r),length(r)-1))
+edges(h::Histogram) = h.x
 bin_centers(h::Histogram) = midpoints(h.x)
-binsize(h::Histogram) = step(h.x)
+Base.midpoints(h::Histogram) = midpoints(h.x)
+binsize(h::Histogram) = step(h.x) 
 function addcounts!(h::Histogram, events::Array) 
-	newcounts = hist(events,bin_edges(h))[2]
+	newcounts = hist(events,edges(h))[2]
 	h.counts+=newcounts
 	h.counted+=sum(newcounts)
 	h.seen+=length(events)
@@ -28,5 +29,12 @@ end
 
 function PyPlot.plot(h::Histogram)
 	figure()
-	plot(bin_centers(h), counts(h))
+	plot(midpoints(h), counts(h))
 end
+
+# interface functions to KernelDensity
+uvhist(edges, y) = UnivariateKDE(edges, convert(Array{Float64,1},hist(y,edges)[2]))
+density(h::UnivariateKDE) = h.density
+edges(h::UnivariateKDE) = h.x
+Base.midpoints(h::UnivariateKDE) = midpoints(edges(h))
+Base.conv(h::Histogram, y) = conv(UnivariateKDE(edges(h), convert(Vector{Float64},counts(h))), y)

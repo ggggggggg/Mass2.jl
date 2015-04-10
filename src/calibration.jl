@@ -97,8 +97,8 @@ end
 
 
 findpeaks(h::Histogram; fwhm=15,n=typemax(Int)) = findpeaks(bin_edges(h), counts(h), fwhm=fwhm,n=n)
-function findpeaks(bin_edges::Range, y::Vector; fwhm=15,n=typemax(Int))
-	k = UnivariateKDE(bin_edges, convert(Array{Float64,1},y))
+function findpeaks(edges::Range, y::Vector; fwhm=15,n=typemax(Int))
+	k = UnivariateKDE(edges, convert(Array{Float64,1},y))
 	findpeaks_(k,fwhm,n)
 end
 
@@ -127,12 +127,12 @@ function findpeaks_{T}(y::Vector{T})
 end
 
 plotpeaks(h::Histogram; fwhm=15, n=typemax(Int)) = plotpeaks(bin_edges(h), counts(h), fwhm=fwhm, n=n)
-function plotpeaks(bin_edges::Range, y::Vector; fwhm=15, n=typemax(Int))
-	k = UnivariateKDE(bin_edges, convert(Array{Float64,1},y))
+function plotpeaks(edges::Range, y::Vector; fwhm=15, n=typemax(Int))
+	k = UnivariateKDE(edges, convert(Array{Float64,1},y))
 	peakinds = findpeaks_(k, fwhm, n)
-	peaky = midpoints(bin_edges)[peakinds]
+	peaky = midpoints(edges)[peakinds]
 	figure()
-	plot(midpoints(bin_edges), y, label="y")
+	plot(midpoints(edges), y, label="y")
 	plot(midpoints(k.x), conv(k,Normal(0,fwhm/2.355)).density, label="smoothed")
 	plot(peaky, y[peakinds],"o",label="raw peaks")
 	plot(peaky, conv(k,Normal(0,fwhm/2.355)).density[peakinds],"o",label="smoothed peaks")

@@ -26,7 +26,7 @@ end
 # generate a spectra with multiple peaks for calibration testing
 dist_energies = [4000,4700,5500,6000,6800,7500,8200,9600,10000]
 dist_filt_values = 5*dist_energies.^0.8
-dist_use_inds = [1,3,4,6,7,8,9]
+dist_use_inds = [1,3,6,7,8,9]
 dist_use_filt_values = dist_filt_values[dist_use_inds]
 dist_use_energies = dist_energies[dist_use_inds]
 filt_value_distribution = MixtureModel([Normal(mu,1) for mu in dist_filt_values])
@@ -133,5 +133,5 @@ cal = c[:calibration]
 fvmanual = [dot(p, c[:whitenoise_filter]) for p in c[:pulse][:]]
 @test fvmanual == c[:filt_value][:] 
 
-# @test all(abs(found_energies-dist_energies).<15) # check that the calibration has the correct peak assignment
+@test all(abs(found_energies-dist_energies).<15) # check that the calibration has the correct peak assignment
 

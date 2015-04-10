@@ -1,5 +1,6 @@
 # eventually these should go inside the module or their own modules and I should choose what to export. not yet
-using Dierckx,PyCall,HDF5,GraphViz,Graphs,ArrayViews,Distributions,KernelDensity,PyPlot,JLD
+using Dierckx,PyCall,HDF5,ArrayViews,Distributions,KernelDensity,PyPlot,JLD, Graphs
+import GraphViz
 
 include("summarize.jl")
 include("mockpulses.jl")
