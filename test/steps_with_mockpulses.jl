@@ -23,6 +23,12 @@ function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby 
 	out
 end
 
+function calc_dc(indicator, uncorrected, selection_good)
+	println("inside calc_dc")
+	σ_smooth = 1.0
+	drift_correct(indicator[:][selection_good], uncorrected[:][selection_good], σ_smooth)
+end
+
 # generate a spectra with multiple peaks for calibration testing
 dist_energies = [4000,4700,5500,6000,6800,7500,8200,9600,10000]
 dist_filt_values = 5*dist_energies.^0.8
@@ -33,22 +39,26 @@ filt_value_distribution = MixtureModel([Normal(mu,1) for mu in dist_filt_values]
 
 steps = AbstractStep[]
 
-push!(steps, MockPulsesStep(TupacLikeTwoExponentialPulseGenerator(Int, filt_value_distribution), 10000, [:pulse,:rowstamp]))
+push!(steps, MockPulsesStep(TupacLikeTwoExponentialPulseGenerator(Int, filt_value_distribution), 5000, [:pulse,:rowstamp]))
 push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
 push!(steps, PerPulseStep(filter1lag, [:pulse, :whitenoise_filter], [:filt_value]))
 push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
-push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies],[:calibration],:filt_value_hist, counted, 5000, true))
+push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies],[:calibration],:filt_value_dc_hist, counted, 5000, true))
 push!(steps, ThresholdStep(compute_whitenoise_filter, [:pulse, :selection_good], [:whitenoise_filter], :selection_good, sum, 100, true))
-push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
+push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:ptm_dc],:filt_value_hist, counted, 3000, true))
+push!(steps, PerPulseStep(applycorrection, [:ptm_dc, :pretrig_mean, :filt_value], [:filt_value_dc]))
+push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
+push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
 push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
+
 push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
 # push!(steps, FreeMemoryStep())
 
 push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
-	:peak_index, :peak_value, :min_value, :selection_good)
+	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
 
 c=Channel()
 c[:pretrig_mean] = RunningVector(Float64)
@@ -61,10 +71,12 @@ c[:peak_index] = RunningVector(Uint16)
 c[:peak_value] = RunningVector(Uint16)
 c[:min_value] = RunningVector(Uint16)
 c[:filt_value] = RunningVector(Float64)
+c[:filt_value_dc] = RunningVector(Float64)
 c[:pretrig_rms] = RunningVector(Float64)
 c[:selection_good] = RunningSumBitVector()
 c[:energy] = RunningVector(Float64)
 c[:filt_value_hist] = Histogram(0:1:20000)
+c[:filt_value_dc_hist] = Histogram(0:1:20000)
 c[:energy_hist] = Histogram(0:1:20000)
 c[:pulse] = RunningVector(Vector{Int})
 c[:rowstamp] = RunningVector(Int)
@@ -90,22 +102,24 @@ workdone_cumulative = Array(Int, length(steps))
 stepelapsed_cumulative = Array(Float64, length(steps))
 errors = Any[]
 close(jldopen(filename(c),"w")) # wipe the test file
-for i = 1:2
+for i = 1:4
 	println("** loop iteration $i")
 	#do steps
 	for (j,s) in enumerate(steps)
 		tstart = time()
-		# try
-		wu = workunits(dostep(s,c))
-		stepelapsed = time()-tstart
-		workdone_cumulative[j] += wu 
-		stepelapsed_cumulative[j] += stepelapsed
-		# catch ex
-		# 	showerror(STDOUT, ex, backtrace())
-		# 	push!(errors, ex)
-		# end
-		# workdone_cumulative+=workdone
-		# stepelapsed_cumulative+=stepelapsed
+		try
+			wu = workunits(dostep(s,c))
+			stepelapsed = time()-tstart
+			workdone_cumulative[j] += wu 
+			stepelapsed_cumulative[j] += stepelapsed
+		catch ex
+			println((i,j))
+			println(sprint(io->showerror(io, ex)))
+			println(sprint(io->Base.show_backtrace(io, catch_backtrace())))
+			debug(s,c)
+			break
+		end
+
 	end
 
 end
@@ -134,4 +148,4 @@ fvmanual = [dot(p, c[:whitenoise_filter]) for p in c[:pulse][:]]
 @test fvmanual == c[:filt_value][:] 
 
 @test all(abs(found_energies-dist_energies).<15) # check that the calibration has the correct peak assignment
-
+close(jld)

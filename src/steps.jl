@@ -62,9 +62,39 @@ other_inputs(s::AbstractStep) = inputs(s)[[!isperpulse(q) for q in inputs(s)]]
 other_outputs(s::AbstractStep) = outputs(s)[[!isperpulse(q) for q in outputs(s)]]
 other_inputs(s::AbstractStep, c::Channel) = [c[q] for q in other_inputs(s)]
 other_outputs(s::AbstractStep, c::Channel) = [c[q] for q in other_outputs(s)]
-mindonethru(x) = minimum(map(donethru,x))
+mindonethru(x) = length(x) == 0 ? DONETHRU_MAX : minimum(map(donethru,x))
 Base.range(s::AbstractStep, c::Channel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
 other_inputs_exist(s::AbstractStep, c::Channel) = all([haskey(c,q) for q in other_inputs(s)])
+function debug(s::AbstractStep, c::Channel)
+	dump(s)
+	println(range(s,c))
+	println("perpulse inputs")
+	for pi in perpulse_inputs(s)
+		println((pi, typeof(c[pi]), donethru(c[pi])))
+	end
+	println("other inputs")
+	for oi in other_inputs(s)
+		println((oi, typeof(c[oi]), donethru(c[oi])))
+	end
+	println("perpulse outputs")
+	for po in perpulse_outputs(s)
+		try 
+			println((po, typeof(c[po]), donethru(c[po])))
+		catch
+			println("c[:$po] doesn't exist")
+		end
+	end
+	println("other outputs")
+	for oo in other_outputs(s)
+		try 
+			println((oo, typeof(c[oo]), donethru(c[oo])))
+		catch
+			println("c[:$oo] doesn't exist")
+		end
+	end
+end
+
+
 # placeholder versions of exists, probably would use Nullable types here
 function dostep(s::PerPulseStep,c::Channel)
 	f = getfunction(s)
@@ -115,8 +145,9 @@ end
 function dostep(s::ThresholdStep, c::Channel)
 	s.do_if_able || (return false)
 	other_inputs_exist(s,c) || (return false)
+	n_other = mindonethru(perpulse_outputs(s,c))
 	n = s.to_watch_func(c[s.to_watch])
-	if n >= s.threshold
+	if n >= s.threshold && n_other >= s.threshold
 		s.do_if_able = false
 		f = getfunction(s)
 		r=1:s.threshold

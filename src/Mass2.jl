@@ -7,6 +7,7 @@ include("mockpulses.jl")
 include("runningvectors.jl")
 include("steps.jl")
 include("calibration.jl")
+include("corrections.jl")
 module Mass2
 
 # package code goes here

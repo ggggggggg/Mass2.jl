@@ -24,8 +24,7 @@ type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
     end
 end
 TupacLikeTwoExponentialPulseGenerator{T}(::Type{T},distribution) = TwoExponentialPulseGenerator{T}(520, 100, 50, 200, 5, 13.5,
-	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -0.0)
-# currently has no pretrigger mean pulseheight correlation
+	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -0.0001)
 
 function two_exponential_pulses(
 	points::Int, rise_points, fall_points,quiescent_value, arrival_point::Tuple, amplitude::Tuple)
@@ -79,8 +78,8 @@ function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
 
 	amplitudes = rand(pg.amplitude_distribution,3)
 
-	# introducw pretrigger mean/amplitude correlation
-	amplitudes .+= amplitudes.*pg.d_amp_d_quiescent*quiescent_value_modulation
+	# introduce pretrigger mean/amplitude correlation
+	amplitudes ./= 1+pg.d_amp_d_quiescent*quiescent_value_modulation
 	amplitudes_tuple = tuple(amplitudes...)
 
 	pulse = two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, quiescent_value, arrival_points, amplitudes_tuple)

@@ -31,20 +31,19 @@ density(h::UnivariateKDE) = h.density
 edges(h::UnivariateKDE) = h.x
 Base.midpoints(h::UnivariateKDE) = midpoints(edges(h))
 Base.conv(h::Histogram, y) = conv(UnivariateKDE(edges(h), convert(Vector{Float64},counts(h))), y)
-function drift_correct(indicator, uncorrected, σ_smooth, limit=NaN)
+function drift_correct(indicator, uncorrected, σ_smooth, limit=NaN;sloperange=(-0.01, 0.01))
     median_indicator = median(indicator)
     centered_indicator = indicator-median_indicator
     if isnan(limit)
         limit = 1.25*StatsBase.percentile(uncorrected, 99) 
     end   
     edges = pow2edges(σ_smooth*0.4, (0, limit))
-    smoother = Normal(0,σ_smooth)
     function tooptimize_entropy(param)
-        corrected = uncorrected+centered_indicator*param[1]
+        corrected = uncorrected.*(1+centered_indicator*param[1])
         uvh = uvhist(edges, corrected)
         entropy(uvh,σ_smooth)
     end
-    optimum = optimize(tooptimize_entropy,-1.0,1.0) # optimize(f(x), lower_bound_x, upper_bound_x) minimizes f with respect to x using brent method
+    optimum = optimize(tooptimize_entropy,first(sloperange),last(sloperange)) # optimize(f(x), lower_bound_x, upper_bound_x) minimizes f with respect to x using brent method
     #check for sucess?
     LinearDriftCorrect(median_indicator, optimum.minimum)
 end
@@ -53,13 +52,14 @@ end
 
 
 function pow2edges(stepsize_guess, limits)
+    # calculate a range from first(limits) to last(limits), stepsize is chose to be close to guess but given a power of 2 number of midpoints
     nbins_guess = int(round( 0.5+(last(limits)-first(limits))/stepsize_guess ))
     pow2=1024
     while pow2<nbins_guess
         pow2*=2
     end
     nbins = pow2
-    edges = first(limits):(last(limits)-first(limits))/pow2:last(limits)
+    first(limits):(last(limits)-first(limits))/pow2:last(limits)
 end
 function entropy(h::UnivariateKDE, σ)
     hsmooth=conv(h, Normal(0,σ))
@@ -67,16 +67,7 @@ function entropy(h::UnivariateKDE, σ)
 end
 
 
-
-using Base.Test
-
-@test length(pow2edges(0.1,1:100))==1025
-@test isapprox(first(pow2edges(0.1,1:100)),1)
-@test isapprox(last(pow2edges(0.1,1:100)),100)
-
-n=10000
-indicator = randn(n)*10
-uncorrected = 1000+randn(n)+indicator*0.1
-dc = drift_correct(indicator, uncorrected, 0.5)
-@test abs(dc.indicator_median)<0.5
-@test abs(dc.param+0.1)<0.005 
+function applycorrection(correction::LinearDriftCorrect, indicator, uncorrected)
+    centered_indicator = indicator-correction.indicator_median
+    corrected = uncorrected.*(1+centered_indicator*correction.param)
+end

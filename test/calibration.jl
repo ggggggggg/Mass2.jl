@@ -41,3 +41,5 @@ peakinds = findpeaks(h,fwhm=50,n=length(known_energies))
 @test length(peakinds)==length(known_energies)
 peakx = sort(midpoints(be)[peakinds])
 @test all(abs(peakx-known_energies).<5);
+
+calibrate_nofit(h, known_energies)
