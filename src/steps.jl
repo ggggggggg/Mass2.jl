@@ -290,16 +290,17 @@ function add_step!(g, s)
     g
 end
 function Graphs.graph(steps::Vector{AbstractStep})
-	g=inclist(ExVertex, is_directed=true)
+	g=Graphs.inclist(ExVertex, is_directed=true)
 	for s in steps
     	add_step!(g,s)
 	end
 	g
 end
 function savegraph(fname,g)
-dot = to_dot(g)
+dot = Graphs.to_dot(g)
 open("$fname.dot","w") do f
 	write(f,dot)
+	end
 end
 # the following code is correct and useful, but it conflicts with @pyimport
 # so I'm commenting it until that is resolved
@@ -311,7 +312,6 @@ end
 # 	open("$fname.png","w") do f 
 # 	       GraphViz.writemime(f, MIME"image/png"(),gviz)
 # 	end #do
-end
 
 
 # figure out what we can free up
