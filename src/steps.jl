@@ -70,11 +70,19 @@ function debug(s::AbstractStep, c::Channel)
 	println(range(s,c))
 	println("perpulse inputs")
 	for pi in perpulse_inputs(s)
-		println((pi, typeof(c[pi]), donethru(c[pi])))
+		try
+			println((pi, typeof(c[pi]), donethru(c[pi])))
+		catch
+			println("c[:$pi] doesn't exist")
+		end
 	end
 	println("other inputs")
 	for oi in other_inputs(s)
-		println((oi, typeof(c[oi]), donethru(c[oi])))
+		try
+			println((oi, typeof(c[oi]), donethru(c[oi])))
+		catch
+			println("c[:$oi] doesn't exist")
+		end
 	end
 	println("perpulse outputs")
 	for po in perpulse_outputs(s)
@@ -184,6 +192,28 @@ function dostep(s::FreeMemoryStep, c::Channel)
 		freeuntil!(d,min(earliest_needed_index(q,c,g)-1,length(d)))
 	end
 	1 # return 1 unit of work done
+end
+
+graphlabel(s::GetPulsesStep) = repr(typeof(s))
+type GetPulsesStep{T} <: AbstractStep
+	pulse_source::T
+	outputs::Vector{Symbol}
+	previous_pulse_index::Int # used to keep track of location in an ljh file for example
+	max_pulses_per_step::Int
+end
+inputs(s::GetPulsesStep) = Symbol[]
+# placeholder versions of exists, probably would use Nullable types here
+function dostep(s::GetPulsesStep{LJHGroup},c::Channel)
+	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
+	length(r)==0 && (return r)
+	pulses, rowstamps = collect(s.pulse_source[r])
+	pulses_out, rowstamps_out = perpulse_outputs(s,c)
+	append!(pulses_out, pulses)
+	assert(length(pulses_out)==last(r))
+	append!(rowstamps_out, rowstamps)
+	assert(length(rowstamps_out)==last(r))
+	s.previous_pulse_index=last(r)
+	r
 end
 
 # JLD/HDF5 helper functions for ToJLDStep

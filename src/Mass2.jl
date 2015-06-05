@@ -9,6 +9,8 @@ include("runningvectors.jl")
 include("steps.jl")
 include("calibration.jl")
 include("corrections.jl")
+include("LJH.jl")
+using LJH
 module Mass2
 
 # package code goes here
