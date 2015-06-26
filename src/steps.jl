@@ -194,7 +194,8 @@ function dostep(s::FreeMemoryStep, c::Channel)
 	1 # return 1 unit of work done
 end
 
-graphlabel(s::GetPulsesStep) = repr(typeof(s))
+## Get Pulses Step
+import LJH.LJHGroup
 type GetPulsesStep{T} <: AbstractStep
 	pulse_source::T
 	outputs::Vector{Symbol}
@@ -215,6 +216,8 @@ function dostep(s::GetPulsesStep{LJHGroup},c::Channel)
 	s.previous_pulse_index=last(r)
 	r
 end
+graphlabel(s::GetPulsesStep) = repr(typeof(s))
+
 
 # JLD/HDF5 helper functions for ToJLDStep
 function d_extend(d::HDF5Dataset, value::Vector, range::UnitRange)

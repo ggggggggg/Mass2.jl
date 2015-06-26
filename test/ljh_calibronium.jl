@@ -1,4 +1,6 @@
+using Mass2
 using ReferenceMicrocalFiles
+
 
 
 # type GetPulsesStep{T} <: AbstractStep
@@ -7,22 +9,20 @@ using ReferenceMicrocalFiles
 # 	previous_pulse_index::Int # used to keep track of location in an ljh file for example
 # 	max_pulses_per_step::Int
 # end
-inputs(s::GetPulsesStep) = Symbol[]
-# placeholder versions of exists, probably would use Nullable types here
-function dostep(s::GetPulsesStep{LJHGroup},c::Channel)
-	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
-	length(r)==0 && (return r)
-	pulses, rowstamps = collect(s.pulse_source[r])
-	pulses_out, rowstamps_out = perpulse_outputs(s,c)
-	append!(pulses_out, pulses)
-	assert(length(pulses_out)==last(r))
-	append!(rowstamps_out, rowstamps)
-	assert(length(rowstamps_out)==last(r))
-	s.previous_pulse_index=last(r)
-	r
-end
-graphlabel(s::GetPulsesStep) = repr(typeof(s))
-
+# inputs(s::GetPulsesStep) = Symbol[]
+# function dostep(s::GetPulsesStep{LJHGroup},c::Channel)
+# 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
+# 	length(r)==0 && (return r)
+# 	pulses, rowstamps = collect(s.pulse_source[r])
+# 	pulses_out, rowstamps_out = perpulse_outputs(s,c)
+# 	append!(pulses_out, pulses)
+# 	assert(length(pulses_out)==last(r))
+# 	append!(rowstamps_out, rowstamps)
+# 	assert(length(rowstamps_out)==last(r))
+# 	s.previous_pulse_index=last(r)
+# 	r
+# end
+# graphlabel(s::GetPulsesStep) = repr(typeof(s))
 
 # type LJHPulseEmitter
 # 	ljh_group::LJHGroup
@@ -65,16 +65,16 @@ s=steps[1]
 
 push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
-# push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
-# push!(steps, PerPulseStep(filter1lag, [:pulse, :whitenoise_filter], [:filt_value]))
-# push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
-# push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies],[:calibration],:filt_value_dc_hist, counted, 5000, true))
-# push!(steps, ThresholdStep(compute_whitenoise_filter, [:pulse, :selection_good], [:whitenoise_filter], :selection_good, sum, 100, true))
-# push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:ptm_dc],:filt_value_hist, counted, 3000, true))
-# push!(steps, PerPulseStep(applycorrection, [:ptm_dc, :pretrig_mean, :filt_value], [:filt_value_dc]))
-# push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
-# push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
-# push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
+push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
+push!(steps, PerPulseStep(filter1lag, [:pulse, :whitenoise_filter], [:filt_value]))
+push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
+push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies],[:calibration],:filt_value_dc_hist, counted, 5000, true))
+push!(steps, ThresholdStep(compute_whitenoise_filter, [:pulse, :selection_good], [:whitenoise_filter], :selection_good, sum, 100, true))
+push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:ptm_dc],:filt_value_hist, counted, 3000, true))
+push!(steps, PerPulseStep(applycorrection, [:ptm_dc, :pretrig_mean, :filt_value], [:filt_value_dc]))
+push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
+push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
+push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 
 # push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
 # push!(steps, FreeMemoryStep())
@@ -106,10 +106,10 @@ c[:pulse] = RunningVector(Vector{Uint16})
 c[:rowstamp] = RunningVector(Int)
 c[:pre_samples] = 100
 c[:frame_time] = 1/100000
-c[:peak_index_criteria] = (170,200)
+c[:peak_index_criteria] = (2280,2360)
 c[:pretrig_rms_criteria] = (0.0,10.)
-c[:postpeak_deriv_criteria] = (0.0,50.0)
-c[:known_energies] = dist_use_energies
+c[:postpeak_deriv_criteria] = (0.0,100.0)
+c[:known_energies] = [4952, 5898, 6929, 8040]
 
 workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f pulses/s",n/t)
 workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f pulses/s",n/t)
@@ -123,7 +123,7 @@ workdone_cumulative = zeros(Int, length(steps))
 stepelapsed_cumulative = Array(Float64, length(steps))
 errors = Any[]
 close(jldopen(filename(c),"w")) # wipe the test file
-for i = 1:4
+for i = 1:30
 	println("** loop iteration $i")
 	#do steps
 	for (j,s) in enumerate(steps)

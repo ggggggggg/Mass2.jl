@@ -1,7 +1,15 @@
 
 function compute_whitenoise_filter(pulse, selection_good) 
-	filter = mean(pulse[selection_good])
-	filter -= mean(filter) # 0 average
+	sumpulse = zeros(Int64, length(pulse[1]))
+	n=0
+	for i=1:length(selection_good) # take the mean of the pulses in a way that avoids int overflows
+		if selection_good[i]
+			sumpulse+=pulse[i]
+			n+=1
+		end
+	end
+	meanpulse = sumpulse/n
+	filter = meanpulse-mean(meanpulse) # 0 average
 	normalization = (maximum(filter)-minimum(filter))./dot(filter, filter)
 	filter*normalization
 end
