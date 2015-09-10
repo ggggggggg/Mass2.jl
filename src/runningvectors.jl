@@ -64,6 +64,11 @@ function Base.setindex!(r::AbstractRunningSumVector, v, inds)
 end
 Base.sum(r::AbstractRunningSumVector) = r.sum
 
+function Base.show(io::IO, r::AbstractRunningVector) 
+	print(io, string(typeof(r)))
+	print(io, " length=$(length(r)), offset=$(r.offset)")
+end
+
 
 export RunningVector, RunningBitVector, RunningSumVector, RunningSumBitVector, freeuntil!, runningendof, available,
 		AbstractRunningVector, AbstractRunningSumVector

@@ -47,10 +47,10 @@ end
 # IEEE Transactions on Electromagnetic Compatibility (Impact Factor: 1.35). 12/2010; DOI: 10.1109/TEMC.2010.2052621 
 # Estimation of the Mathematical Parameters of Double-Exponential Pulses Using the Nelder–Mead Algorithm - ResearchGate. Available from: http://www.researchgate.net/publication/224153186_Estimation_of_the_Mathematical_Parameters_of_Double-Exponential_Pulses_Using_the_NelderMead_Algorithm [accessed Mar 20, 2015].kfactor(a,b) = 1/(exp(-a*(log(a/b)/(a-b)))-exp(-b*(log(a/b)/(a-b))))
 kfactor(a,b) = 1/(exp(-a*(log(a/b)/(a-b)))-exp(-b*(log(a/b)/(a-b)))) # memoize?
-const X = [0.842411, 1.660852, 8.887335, 0.624129]
-const Y = [2.167370, 0.360349, 0.013289, 1.358701, 0.137057, 122.802861, 1.314850] 
-alpha(t_rise, t_fwhm) = (X[1]/((t_fwhm/t_rise)^X[2]-X[3])^X[4])/t_rise
-beta(t_rise, t_fwhm) = (Y[1]-Y[2]*exp(-t_fwhm*Y[3]/t_rise)-Y[4]*exp(-t_fwhm*Y[5]/t_rise)-Y[6]*exp(-t_fwhm*Y[7]/t_rise))/t_rise
+# const X = [0.842411, 1.660852, 8.887335, 0.624129]
+# const Y = [2.167370, 0.360349, 0.013289, 1.358701, 0.137057, 122.802861, 1.314850] 
+# alpha(t_rise, t_fwhm) = (X[1]/((t_fwhm/t_rise)^X[2]-X[3])^X[4])/t_rise
+# beta(t_rise, t_fwhm) = (Y[1]-Y[2]*exp(-t_fwhm*Y[3]/t_rise)-Y[4]*exp(-t_fwhm*Y[5]/t_rise)-Y[6]*exp(-t_fwhm*Y[7]/t_rise))/t_rise
 
 white_noise(points::Int, noise_fwhm) = rand(points)*noise_fwhm/(2*sqrt(2*log(2))) # fwhm to std
 function white_noise!(pulse, noise_fwhm) 

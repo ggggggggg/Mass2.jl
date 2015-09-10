@@ -104,7 +104,7 @@ end
 
 
 # placeholder versions of exists, probably would use Nullable types here
-function dostep(s::PerPulseStep,c::Channel)
+function dostep!(s::PerPulseStep,c::Channel)
 	f = getfunction(s)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
@@ -142,7 +142,7 @@ function Base.range(s::HistogramStep, c::Channel)
 	stop = mindonethru(perpulse_inputs(s,c))
 	start:stop
 end
-function dostep(s::HistogramStep, c::Channel)
+function dostep!(s::HistogramStep, c::Channel)
 	f = getfunction(s)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
@@ -150,7 +150,7 @@ function dostep(s::HistogramStep, c::Channel)
 	r
 end
 
-function dostep(s::ThresholdStep, c::Channel)
+function dostep!(s::ThresholdStep, c::Channel)
 	s.do_if_able || (return false)
 	other_inputs_exist(s,c) || (return false)
 	n_other = mindonethru(perpulse_outputs(s,c))
@@ -176,7 +176,7 @@ end
 
 graphlabel(s::MockPulsesStep) = "MockPulsesStep"
 inputs(s::MockPulsesStep) = []
-function dostep(s::MockPulsesStep, c::Channel)
+function dostep!(s::MockPulsesStep, c::Channel)
 	pulses, rowstamps = gettriggeredpulse!(s.pg,s.pulses_per_step)
 	append!(c[s.outputs[1]], pulses)
 	append!(c[s.outputs[2]], rowstamps)
@@ -186,7 +186,7 @@ end
 graphlabel(s::FreeMemoryStep) = "FreeMemoryStep"
 inputs(s::FreeMemoryStep) = Symbol[]
 outputs(s::FreeMemoryStep) = Symbol[]
-function dostep(s::FreeMemoryStep, c::Channel)
+function dostep!(s::FreeMemoryStep, c::Channel)
 	for q in perpulse_symbols
 		d=c[q]
 		freeuntil!(d,min(earliest_needed_index(q,c,g)-1,length(d)))
@@ -204,7 +204,7 @@ type GetPulsesStep{T} <: AbstractStep
 end
 inputs(s::GetPulsesStep) = Symbol[]
 # placeholder versions of exists, probably would use Nullable types here
-function dostep(s::GetPulsesStep{LJHGroup},c::Channel)
+function dostep!(s::GetPulsesStep{LJHGroup},c::Channel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
 	pulses, rowstamps = collect(s.pulse_source[r])
@@ -236,7 +236,7 @@ function update!(parent::Union(JldFile,JldGroup), name, value)
 end
 graphlabel(s::ToJLDStep) = "to JLD"
 outputs(s::ToJLDStep) = []
-function dostep(s::ToJLDStep,c::Channel)
+function dostep!(s::ToJLDStep,c::Channel)
 	jld = jldopen(filename(c),"r+")
 	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
 		d=d_require(jld, string(sym), eltype(value)) 
@@ -255,7 +255,7 @@ function dostep(s::ToJLDStep,c::Channel)
 	# end
 	close(jld)
 	1 # return workunits info
-end #dostep
+end #dostep!
 
 default_vertex_attrs = AttributeDict()
 default_vertex_attrs["fontsize"]=18.0

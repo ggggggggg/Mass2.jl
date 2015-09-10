@@ -95,8 +95,12 @@ c[:pretrig_rms_criteria] = (0.0,10.)
 c[:postpeak_deriv_criteria] = (0.0,50.0)
 c[:known_energies] = dist_use_energies
 
-g = graph(steps)
-
+# metadata
+c[:steps]=steps
+c[:workdone_cumulative] = Array(Int, length(steps))
+c[:stepelapsed_cumulative] = Array(Float64, length(steps))
+c[:filename] = "flowsimple_test.jld"
+c[:name] = "channel test 1"
 
 workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f pulses/s",n/t)
 workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f pulses/s",n/t)
@@ -105,33 +109,45 @@ workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0
 workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) $n executions at "*@sprintf("%0.2f executions/s",n/t)
 workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
 
-savegraph("graph",g)
-workdone_cumulative = Array(Int, length(steps))
-stepelapsed_cumulative = Array(Float64, length(steps))
-errors = Any[]
-close(jldopen(filename(c),"w")) # wipe the test file
-for i = 1:4
-	println("** loop iteration $i")
-	#do steps
-	for (j,s) in enumerate(steps)
-		tstart = time()
+savegraph("graph",graph(steps))
+
+function dosteps!(c::Channel, steps::Vector{AbstractStep})
+	haskey(c, :exception_info)  && return # stop doing steps on this channel afte error
+	workdone_cumulative = c[:workdone_cumulative]
+	stepelapsed_cumulative = c[:stepelapsed_cumulative]
+	for (i,s) in enumerate(steps)
 		try
-			wu = workunits(dostep(s,c))
+			tstart = time()
+			wu = workunits(dostep!(s,c))
 			stepelapsed = time()-tstart
 			workdone_cumulative[j] += wu 
 			stepelapsed_cumulative[j] += stepelapsed
 		catch ex
-			println((i,j))
-			println(sprint(io->showerror(io, ex)))
-			println(sprint(io->Base.show_backtrace(io, catch_backtrace())))
-			debug(s,c)
-			break
+			if isa(ex, InterruptException) # rethrow Ctrl-C
+				rethrow(ex)
+			else # store a backtrace of the exception
+				ex_str = sprint() do io
+					showerror(io, ex)
+					print(io,"\n")
+					Base.show_backtrace(io, catch_backtrace())
+					end
+				c[:exception_info] = ex_str
+				# add debug step string? debug(s,c)
+				warn(string(c[:name], " had error:"))
+				println(ex_str)
+				return # stop doing steps on this channel afte error
+			end
 		end
-
 	end
-
 end
-[println("step $i: "*workstat(workdone_cumulative[i], steps[i], stepelapsed_cumulative[i])) for i = 1:length(steps)];
+dosteps!(c::Channel) = dosteps!(c, c[:steps])
+
+close(jldopen(filename(c),"w")) # wipe the test file
+for i = 1:4
+	println("** loop iteration $i")
+	dosteps!(c)
+end
+[println("step $i: "*workstat(c[:workdone_cumulative][i], c[:steps][i], c[:stepelapsed_cumulative][i])) for i = 1:length(steps)];
 [println("$n donethru $(donethru(c[n]))") for n in keys(c)];
 jld = jldopen(filename(c), "r+")
 
