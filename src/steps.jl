@@ -6,10 +6,10 @@ const DONETHRU_MAX = typemax(Int)-1
 include("histogram.jl")
 
 
-typealias Channel Dict{Symbol,Any}
+typealias MassChannel Dict{Symbol,Any}
 const perpulse_symbols =  Set{Symbol}()
 isperpulse(s::Symbol) = s in perpulse_symbols
-filename(c::Channel) = joinpath(pwd(), "flowsimple_test.jld")
+filename(c::MassChannel) = joinpath(pwd(), "flowsimple_test.jld")
 
 
 
@@ -50,22 +50,22 @@ getfunction(s::AbstractStep) = s.func
 graphlabel(s::AbstractStep) = string(getfunction(s))
 inputs(s::AbstractStep) = s.inputs
 outputs(s::AbstractStep) = s.outputs
-inputs(s::AbstractStep, c::Channel) = [c[q] for q in inputs(s)]
-outputs(s::AbstractStep, c::Channel) = [c[q] for q in outputs(s)]
-inputs(s::AbstractStep, c::Channel, r::UnitRange{Int}) = 
+inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in inputs(s)]
+outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in outputs(s)]
+inputs(s::AbstractStep, c::MassChannel, r::UnitRange{Int}) = 
 [isperpulse(q)?c[q][r]:c[q] for q in s.inputs]
 perpulse_inputs(s::AbstractStep) = inputs(s)[[isperpulse(q) for q in inputs(s)]]
 perpulse_outputs(s::AbstractStep) = outputs(s)[[isperpulse(q) for q in outputs(s)]]
-perpulse_inputs(s::AbstractStep, c::Channel) = [c[q] for q in perpulse_inputs(s)]
-perpulse_outputs(s::AbstractStep, c::Channel) = [c[q] for q in perpulse_outputs(s)]
+perpulse_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_inputs(s)]
+perpulse_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_outputs(s)]
 other_inputs(s::AbstractStep) = inputs(s)[[!isperpulse(q) for q in inputs(s)]]
 other_outputs(s::AbstractStep) = outputs(s)[[!isperpulse(q) for q in outputs(s)]]
-other_inputs(s::AbstractStep, c::Channel) = [c[q] for q in other_inputs(s)]
-other_outputs(s::AbstractStep, c::Channel) = [c[q] for q in other_outputs(s)]
+other_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_inputs(s)]
+other_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_outputs(s)]
 mindonethru(x) = length(x) == 0 ? DONETHRU_MAX : minimum(map(donethru,x))
-Base.range(s::AbstractStep, c::Channel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
-other_inputs_exist(s::AbstractStep, c::Channel) = all([haskey(c,q) for q in other_inputs(s)])
-function debug(s::AbstractStep, c::Channel)
+Base.range(s::AbstractStep, c::MassChannel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
+other_inputs_exist(s::AbstractStep, c::MassChannel) = all([haskey(c,q) for q in other_inputs(s)])
+function debug(s::AbstractStep, c::MassChannel)
 	dump(s)
 	println(range(s,c))
 	println("perpulse inputs")
@@ -104,7 +104,7 @@ end
 
 
 # placeholder versions of exists, probably would use Nullable types here
-function dostep!(s::PerPulseStep,c::Channel)
+function dostep!(s::PerPulseStep,c::MassChannel)
 	f = getfunction(s)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
@@ -116,7 +116,7 @@ function dostep!(s::PerPulseStep,c::Channel)
 		@assert(length(fout) == length(outputs(s)))
 		for (fo, co) in zip(fout, outputs(s,c))
 			# fo is function out
-			# co is channel output eg the thing store in the channel object
+			# co is Masschannel output eg the thing store in the Masschannel object
 			append!(co,fo)
 			assert(length(co)==last(r)) # append isn't the right choice if the lengths differ
 			# I'm not sure, but there may be no good reason to support differing lengths
@@ -129,20 +129,20 @@ end
 outputs(s::HistogramStep) = other_inputs(s) # for now I'm conflating the idea of perpulse and inputs vs inputs/outputs
 perpulse_outputs(s::HistogramStep) = Symbol[]
 other_outputs(s::HistogramStep) = outputs(s)
-function inputs(s::HistogramStep, c::Channel, r::Range)
+function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
 		push!(out, isa(inp,Histogram)?inp:inp[r])
 	end
 	out
 end
-function Base.range(s::HistogramStep, c::Channel)
+function Base.range(s::HistogramStep, c::MassChannel)
 	# for now I'm conflating the idea of per_pulse and histogram on inputs
 	start = mindonethru(other_inputs(s,c))+1
 	stop = mindonethru(perpulse_inputs(s,c))
 	start:stop
 end
-function dostep!(s::HistogramStep, c::Channel)
+function dostep!(s::HistogramStep, c::MassChannel)
 	f = getfunction(s)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
@@ -150,7 +150,7 @@ function dostep!(s::HistogramStep, c::Channel)
 	r
 end
 
-function dostep!(s::ThresholdStep, c::Channel)
+function dostep!(s::ThresholdStep, c::MassChannel)
 	s.do_if_able || (return false)
 	other_inputs_exist(s,c) || (return false)
 	n_other = mindonethru(perpulse_outputs(s,c))
@@ -176,7 +176,7 @@ end
 
 graphlabel(s::MockPulsesStep) = "MockPulsesStep"
 inputs(s::MockPulsesStep) = []
-function dostep!(s::MockPulsesStep, c::Channel)
+function dostep!(s::MockPulsesStep, c::MassChannel)
 	pulses, rowstamps = gettriggeredpulse!(s.pg,s.pulses_per_step)
 	append!(c[s.outputs[1]], pulses)
 	append!(c[s.outputs[2]], rowstamps)
@@ -186,7 +186,7 @@ end
 graphlabel(s::FreeMemoryStep) = "FreeMemoryStep"
 inputs(s::FreeMemoryStep) = Symbol[]
 outputs(s::FreeMemoryStep) = Symbol[]
-function dostep!(s::FreeMemoryStep, c::Channel)
+function dostep!(s::FreeMemoryStep, c::MassChannel)
 	for q in perpulse_symbols
 		d=c[q]
 		freeuntil!(d,min(earliest_needed_index(q,c,g)-1,length(d)))
@@ -204,7 +204,7 @@ type GetPulsesStep{T} <: AbstractStep
 end
 inputs(s::GetPulsesStep) = Symbol[]
 # placeholder versions of exists, probably would use Nullable types here
-function dostep!(s::GetPulsesStep{LJHGroup},c::Channel)
+function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
 	pulses, rowstamps = collect(s.pulse_source[r])
@@ -236,7 +236,7 @@ function update!(parent::Union(JldFile,JldGroup), name, value)
 end
 graphlabel(s::ToJLDStep) = "to JLD"
 outputs(s::ToJLDStep) = []
-function dostep!(s::ToJLDStep,c::Channel)
+function dostep!(s::ToJLDStep,c::MassChannel)
 	jld = jldopen(filename(c),"r+")
 	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
 		d=d_require(jld, string(sym), eltype(value)) 
@@ -352,14 +352,14 @@ donethru(x::AbstractRunningVector) = length(x)
 donethru(x::Vector{Float64}) = DONETHRU_MAX
 donethru(x)=DONETHRU_MAX
 earliest_needed_index(x) = donethru(x)+1
-function earliest_needed_index(c::Channel, q::Symbol,p::Symbol)
+function earliest_needed_index(c::MassChannel, q::Symbol,p::Symbol)
 	if q in keys(c)
 		return earliest_needed_index(c[q])
 	elseif q==:to_disk
-		return donethru_jld(c::Channel,q,p)+1
+		return donethru_jld(c::MassChannel,q,p)+1
 	end
 end
-function donethru_jld(c::Channel,q::Symbol,p::Symbol)
+function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
 	jld = jldopen(filename(c),"r+")
 	l = 0
 	if string(p) in names(jld)
@@ -368,7 +368,7 @@ function donethru_jld(c::Channel,q::Symbol,p::Symbol)
 	close(jld)
 	l
 end
-function earliest_needed_index(parent::Symbol, c::Channel, g::AbstractGraph) 
+function earliest_needed_index(parent::Symbol, c::MassChannel, g::AbstractGraph) 
 	v = vertex(g,string(parent))
 	children_vertices = visited_vertices(g,BreadthFirst(),v) # consider memoizing this
 	shift!(children_vertices) # remove the first element, which is always v

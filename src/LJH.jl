@@ -80,7 +80,7 @@ end
 # Get pertinent information from LJH file header and return it as LJHHeader
 function readLJHHeader(filename::String)
     open(filename) do str # ensures str is closed
-    labels={"base"   =>"Timebase:",
+    labels=Dict("base"   =>"Timebase:",
             "date"   =>"Date:",
             "date1"  =>"File First Record Time:",
             "end"    =>"#End of Header",
@@ -91,7 +91,7 @@ function readLJHHeader(filename::String)
             "column"=>r"Column number .*: (\d+)",
             "row"=>r"Row number .*: (\d+)",
             "num_columns"=>"Number of columns:",
-            "num_rows"=>"Number of rows:"}
+            "num_rows"=>"Number of rows:")
     nlines=0
     maxnlines=100
     column,row, num_columns, num_rows = -1,-1,-1,-1
@@ -204,10 +204,10 @@ fileData(ljh::LJHFile) = [d for (d,t) in ljh]
 
 
 type LJHGroup
-    ljhfiles::(LJHFile...)
+    ljhfiles::Vector{LJHFile}
     lengths::Vector{Int}
 end
-LJHGroup(x::(LJHFile...)) = LJHGroup(x, Int[int(length(f)) for f in x])
+LJHGroup(x::Vector{LJHFile}) = LJHGroup(x, Int[int(length(f)) for f in x])
 LJHGroup(x) = LJHGroup(tuple([LJHFile(f) for f in x]...))
 LJHGroup(x::LJHFile) = LJHGroup(tuple(x))
 LJHGroup(x::String) = LJHGroup(LJHFile(x))

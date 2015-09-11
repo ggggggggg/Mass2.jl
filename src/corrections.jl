@@ -53,7 +53,7 @@ end
 
 function pow2edges(stepsize_guess, limits)
     # calculate a range from first(limits) to last(limits), stepsize is chose to be close to guess but given a power of 2 number of midpoints
-    nbins_guess = int(round( 0.5+(last(limits)-first(limits))/stepsize_guess ))
+    nbins_guess = round(Int, 0.5+(last(limits)-first(limits))/stepsize_guess )
     pow2=1024
     while pow2<nbins_guess
         pow2*=2

@@ -68,7 +68,7 @@ push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
 
-c=Channel()
+c=MassChannel()
 c[:pretrig_mean] = RunningVector(Float64)
 c[:pretrig_rms] = RunningVector(Float64)
 c[:pulse_average] = RunningVector(Float64)

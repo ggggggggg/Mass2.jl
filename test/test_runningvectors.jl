@@ -11,7 +11,7 @@ r[2]=44
 @test eltype(r)==Float64
 
 rb = RunningBitVector()
-append!(rb, randbool(10))
+append!(rb, bitrand(10))
 @test length(rb) == 10
 freeuntil!(rb,1)
 @test length(rb) == 10
@@ -20,7 +20,7 @@ rb[2] = true
 
 
 rsb = RunningSumBitVector()
-a = randbool(100)
+a = bitrand(100)
 a[100]=true
 append!(rsb,a)
 @test sum(a) == sum(rsb)
