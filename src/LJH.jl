@@ -98,41 +98,40 @@ function readLJHHeader(filename::String)
     date = "unknown" # If header standard for date labels changes, we don't want a hard error
 
     # Read channel # from the file name, then update that result from the header, if it exists.
-    channum = uint16(-1)
     m = match(r"_chan\d+", filename)
-    channum = uint16(m.match[6:end])
+    channum = parse(Uint16,m.match[6:end])
 
     while nlines<maxnlines
         line=readline(str)
         nlines+=1
-        if beginswith(line,labels["end"])
+        if startswith(line,labels["end"])
             headerSize = position(str)
             return(LJHHeader(filename,nPresamples,nSamples,
                              timebase,timestampOffset,date,headerSize,channum,column,row,num_columns,num_rows))
-        elseif beginswith(line,labels["base"])
-            timebase = float64(line[1+length(labels["base"]):end])
-        elseif beginswith(line,labels["date"]) # Old LJH files
+        elseif startswith(line,labels["base"])
+            timebase = parse(Float64,line[1+length(labels["base"]):end])
+        elseif startswith(line,labels["date"]) # Old LJH files
             date = line[7:end-2]
-        elseif beginswith(line,labels["date1"])# Newer LJH files
+        elseif startswith(line,labels["date1"])# Newer LJH files
             date = line[25:end-2]
-        elseif beginswith(line,labels["channum"])# Newer LJH files
-            channum = uint16(parsefloat(line[10:end]))
-        elseif beginswith(line,labels["offset"])
-            timestampOffset = float64(line[1+length(labels["offset"]):end])
-        elseif beginswith(line,labels["pre"])
-            nPresamples = int64(line[1+length(labels["pre"]):end])
-        elseif beginswith(line,labels["tot"])
-            nSamples = int64(line[1+length(labels["tot"]):end])
+        elseif startswith(line,labels["channum"])# Newer LJH files
+            channum = Uint16(parse(line[10:end]))
+        elseif startswith(line,labels["offset"])
+            timestampOffset = parse(Float64,line[1+length(labels["offset"]):end])
+        elseif startswith(line,labels["pre"])
+            nPresamples = parse(Int64,line[1+length(labels["pre"]):end])
+        elseif startswith(line,labels["tot"])
+            nSamples = parse(Int64,line[1+length(labels["tot"]):end])
         elseif ismatch(labels["column"],line)
             m=match(labels["column"],line)
-            column = int(m.captures[1])
+            column = parse(Int64,m.captures[1])
         elseif ismatch(labels["row"],line)
             m=match(labels["row"],line)
-            row = int(m.captures[1])
-        elseif beginswith(line, labels["num_columns"])
-            num_columns = int(line[1+length(labels["num_columns"]):end])
-        elseif beginswith(line, labels["num_rows"])
-            num_rows = int(line[1+length(labels["num_rows"]):end])
+            row = parse(Int64,m.captures[1])
+        elseif startswith(line, labels["num_columns"])
+            num_columns = parse(Int64,line[1+length(labels["num_columns"]):end])
+        elseif startswith(line, labels["num_rows"])
+            num_rows = parse(Int64,line[1+length(labels["num_rows"]):end])
         end
     end
     error("read_LJH_header: where's '$(labels["end"])' ?")
@@ -207,9 +206,9 @@ type LJHGroup
     ljhfiles::Vector{LJHFile}
     lengths::Vector{Int}
 end
-LJHGroup(x::Vector{LJHFile}) = LJHGroup(x, Int[int(length(f)) for f in x])
-LJHGroup(x) = LJHGroup(tuple([LJHFile(f) for f in x]...))
-LJHGroup(x::LJHFile) = LJHGroup(tuple(x))
+LJHGroup(x::Vector{LJHFile}) = LJHGroup(x, Int[length(f) for f in x])
+LJHGroup(x) = LJHGroup([LJHFile(f) for f in x])
+LJHGroup(x::LJHFile) = LJHGroup([x])
 LJHGroup(x::String) = LJHGroup(LJHFile(x))
 Base.length(g::LJHGroup) = sum(g.lengths)
 Base.close(g::LJHGroup) = map(close, g.ljhfiles)
@@ -290,25 +289,28 @@ end
 
 # Time in microseconds, given six-byte pulse record header (LJH version 2.1.0)
 function recordTime(header::Vector{Uint8})
-    frac = uint64(header[1])
-    ms = uint64(header[3]) |
-         (uint64(header[4])<<8) |
-         (uint64(header[5])<<16) |
-         (uint64(header[6])<<24)
+    frac = UInt64(header[1])
+    ms = UInt64(header[3]) |
+         (UInt64(header[4])<<8) |
+         (UInt64(header[5])<<16) |
+         (UInt64(header[6])<<24)
     return ms*1000 + frac*4
 end
 
 function record_row_count(header::Vector{Uint8}, num_rows::Integer, row::Integer, frame_time::Float64)
-    frac = uint64(header[1])
-    ms = uint64(header[3]) |
-         (uint64(header[4])<<8) |
-         (uint64(header[5])<<16) |
-         (uint64(header[6])<<24)
-    count_4usec = uint64(ms*250+frac)
-    ns_per_frame = uint64(frame_time*1e9)
-    ns_per_4sec = uint64(4000)
-    count_frame, r = divrem(count_4usec*ns_per_4sec,ns_per_frame) # can replace with cld in julia 0.4
-    count_frame::Uint64 += r>0 ? 1 : 0  
+    frac = UInt64(header[1])
+    ms = UInt64(header[3]) |
+         (UInt64(header[4])<<8) |
+         (UInt64(header[5])<<16) |
+         (UInt64(header[6])<<24)
+    count_4usec = UInt64(ms*250+frac)
+    ns_per_frame = round(UInt64,frame_time*1e9)
+    ns_per_4sec = UInt64(4000)
+    count_frame = cld(count_4usec*ns_per_4sec,ns_per_frame) 
+    if row == -1 # stupid workaround for the fact that -1 ruins the row calculation
+        row = 0
+        num_rows = 30
+    end
     count_row = count_frame*num_rows+row
     return count_row
 end
@@ -319,13 +321,13 @@ recordHeader(t::Uint64) = recordHeader(t, Array(Uint8,6))
 # Allocation-free version
 function recordHeader(t::Uint64, header::Vector{Uint8})
     frac = div(t%1000,4)
-    ms = uint32(div(t,1000))
-    header[1] = uint8(frac)
-    header[2] = uint8(0)
-    header[3] = uint8(0xFF & ms)
-    header[4] = uint8(0xFF & (ms >> 8))
-    header[5] = uint8(0xFF & (ms >> 16))
-    header[6] = uint8(0xFF & (ms >> 24))
+    ms = UInt32(div(t,1000))
+    header[1] = UInt8(frac)
+    header[2] = UInt8(0)
+    header[3] = UInt8(0xFF & ms)
+    header[4] = UInt8(0xFF & (ms >> 8))
+    header[5] = UInt8(0xFF & (ms >> 16))
+    header[6] = UInt8(0xFF & (ms >> 24))
     return header
 end
 

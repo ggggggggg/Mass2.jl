@@ -40,7 +40,7 @@ function compute_summary(pulseiterator, Npre, frame_time)
         s = s2 = 0.0
         min_idx = 0
         peak_idx = 0
-        peak_val = uint16(0)
+        peak_val = Uint16(0)
         min_idx = 0
         min_val = typemax(Uint16)
         for j = 1:Npre
@@ -88,9 +88,9 @@ function compute_summary(pulseiterator, Npre, frame_time)
         if ptm < 0
             summary.peak_value[p] = peak_val
         elseif peak_val > ptm
-            summary.peak_value[p] = peak_val - uint16(ptm)
+            summary.peak_value[p] = peak_val - round(Uint16,ptm)
         else
-            summary.peak_value[p] = uint16(0)
+            summary.peak_value[p] = Uint16(0)
         end
     end
     (summary.pretrig_mean, summary.pretrig_rms, summary.pulse_average, summary.pulse_rms, summary.rise_time, summary.postpeak_deriv, 

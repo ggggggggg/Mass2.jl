@@ -9,7 +9,6 @@ include("histogram.jl")
 typealias MassChannel Dict{Symbol,Any}
 const perpulse_symbols =  Set{Symbol}()
 isperpulse(s::Symbol) = s in perpulse_symbols
-filename(c::MassChannel) = joinpath(pwd(), "flowsimple_test.jld")
 
 
 
@@ -25,6 +24,7 @@ type PerPulseStep <: AbstractStep
 end
 type ToJLDStep <:AbstractStep
 	inputs::Vector{Symbol}
+	jldfilename::AbstractString
 end	
 type HistogramStep <: AbstractStep
 	func::Function
@@ -45,6 +45,7 @@ type MockPulsesStep <: AbstractStep
 	outputs::Vector{Symbol}
 end
 type FreeMemoryStep <: AbstractStep
+	graph # graph(c[:steps]) most likley
 end
 getfunction(s::AbstractStep) = s.func
 graphlabel(s::AbstractStep) = string(getfunction(s))
@@ -109,7 +110,7 @@ function dostep!(s::PerPulseStep,c::MassChannel)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
 	length(r)==0 && (return r)
-	fout = f(inputs(s,c,r)...) # it doesn't know the types here, tho f will, also I could write a macro so it knew types
+	fout = f(inputs(s,c,r)...) # it doesn't know the types here, tho f will, in principle one could write a macro so it knew types
 	if length(outputs(s)) == 1 # fout will just be a value
 		append!(outputs(s,c)[1],fout)
 	elseif length(outputs(s)) > 1 # fout will be a tuple of values, one for each of outputs(s)
@@ -164,8 +165,8 @@ function dostep!(s::ThresholdStep, c::MassChannel)
 			c[outputs(s)[1]] =  fout
 		elseif length(outputs(s)) > 1
 			@assert(length(fout) == length(outputs(s)))
-			for (fo, co) in zip(fout, outputs(s))
-				c[fo]=co
+			for (single_output, output_key) in zip(fout, outputs(s))
+				c[output_key]=single_output
 			end
 		end
 		return true
@@ -187,11 +188,14 @@ graphlabel(s::FreeMemoryStep) = "FreeMemoryStep"
 inputs(s::FreeMemoryStep) = Symbol[]
 outputs(s::FreeMemoryStep) = Symbol[]
 function dostep!(s::FreeMemoryStep, c::MassChannel)
+	n_freed = 0
 	for q in perpulse_symbols
 		d=c[q]
-		freeuntil!(d,min(earliest_needed_index(q,c,g)-1,length(d)))
+		l0 = length(available(d))
+		freeuntil!(d,min(earliest_needed_index(q,c,s.graph)-1,length(d)))
+		n_freed += l0-length(available(d))
 	end
-	1 # return 1 unit of work done
+	n_freed # return 1 unit of work done
 end
 
 ## Get Pulses Step
@@ -237,14 +241,15 @@ end
 graphlabel(s::ToJLDStep) = "to JLD"
 outputs(s::ToJLDStep) = []
 function dostep!(s::ToJLDStep,c::MassChannel)
-	jld = jldopen(filename(c),"r+")
+	jld = jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w")
+	n_written = 0
 	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
 		d=d_require(jld, string(sym), eltype(value)) 
 		# account for the fact that the dataset is created with 1 element, not zero 			
 		start = length(d)==1 ? 1 : length(d)+1
 		r = start:length(value)
+		n_written += length(r)
 		if length(r)>0
-			println("writing $sym[$r] to $jld")
 			d_extend(d, value[r],r)
 		end
 	end
@@ -254,7 +259,7 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	# 	# update!(jld, string(sym), value)
 	# end
 	close(jld)
-	1 # return workunits info
+	n_written # return workunits info
 end #dostep!
 
 default_vertex_attrs = AttributeDict()
@@ -264,7 +269,7 @@ default_vertex_attrs["fillcolor"]="lightgrey"
 default_vertex_attrs["style"]="filled"
 label(v)=v.label
 vertex_labels(g) = [label(v) for v in vertices(g)]
-function vertex(v,label)
+function vertex(g,label)
 	i=first(indexin([label], vertex_labels(g)))
 	i==0 && error("no vertex with label $label in $v")
 	vertices(g)[i]
@@ -370,7 +375,7 @@ function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
 end
 function earliest_needed_index(parent::Symbol, c::MassChannel, g::AbstractGraph) 
 	v = vertex(g,string(parent))
-	children_vertices = visited_vertices(g,BreadthFirst(),v) # consider memoizing this
+	children_vertices = Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) # consider memoizing this
 	shift!(children_vertices) # remove the first element, which is always v
 	children_sym = [symbol(label(u)) for u in children_vertices]
 	eni = [earliest_needed_index(c,q,parent) for q in children_sym]

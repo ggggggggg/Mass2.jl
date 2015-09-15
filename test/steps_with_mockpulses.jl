@@ -1,4 +1,3 @@
-
 function compute_whitenoise_filter(pulse, selection_good) 
 	sumpulse = zeros(Int64, length(pulse[1]))
 	n=0
@@ -61,7 +60,7 @@ push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_g
 push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
 push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 
-push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
+#push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
 # push!(steps, FreeMemoryStep())
 
 push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
@@ -111,65 +110,93 @@ workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf(
 
 savegraph("graph",graph(steps))
 
-function dosteps!(c::Channel, steps::Vector{AbstractStep})
-	haskey(c, :exception_info)  && return # stop doing steps on this channel afte error
-	workdone_cumulative = c[:workdone_cumulative]
-	stepelapsed_cumulative = c[:stepelapsed_cumulative]
-	for (i,s) in enumerate(steps)
-		try
-			tstart = time()
-			wu = workunits(dostep!(s,c))
-			stepelapsed = time()-tstart
-			workdone_cumulative[j] += wu 
-			stepelapsed_cumulative[j] += stepelapsed
-		catch ex
-			if isa(ex, InterruptException) # rethrow Ctrl-C
-				rethrow(ex)
-			else # store a backtrace of the exception
-				ex_str = sprint() do io
-					showerror(io, ex)
-					print(io,"\n")
-					Base.show_backtrace(io, catch_backtrace())
-					end
-				c[:exception_info] = ex_str
-				# add debug step string? debug(s,c)
-				warn(string(c[:name], " had error:"))
-				println(ex_str)
-				return # stop doing steps on this channel afte error
-			end
-		end
+function repeatstep(c::MassChannel, s::AbstractStep, exitchannel::Channel{Int}, workdonechannel::Channel)
+	workdone_cumulative=0
+	time_elapsed_cumulative=0
+	while !isready(exitchannel)
+		# do the step, record workdone and time elapsed
+		time_elapsed_cumulative+= @elapsed workdone_cumulative += workunits(dostep!(s,c))
+		put!(workdonechannel,(workdone_cumulative, time_elapsed_cumulative))
+		yield()
 	end
 end
-dosteps!(c::Channel) = dosteps!(c, c[:steps])
 
-close(jldopen(filename(c),"w")) # wipe the test file
-for i = 1:4
-	println("** loop iteration $i")
-	dosteps!(c)
+
+tasks = Dict()
+exitchannels = Dict()
+workdonechannels = Dict()
+for s in steps
+	exitchannel = Channel{Int}(1)
+	workdonechannel = Channel(10)
+	elapsedchannel = Channel(10)
+	tasks[s] = @schedule repeatstep(c, s, exitchannel, workdonechannel)
+	exitchannels[s] = exitchannel
+	workdonechannels[s] = workdonechannel
 end
-[println("step $i: "*workstat(c[:workdone_cumulative][i], c[:steps][i], c[:stepelapsed_cumulative][i])) for i = 1:length(steps)];
-[println("$n donethru $(donethru(c[n]))") for n in keys(c)];
-jld = jldopen(filename(c), "r+")
 
-using Base.Test
 
-eh = c[:energy_hist]
-@test counted(eh) == sum(counts(eh))
-#@test counted(eh) == sum(c[:selection_good]) # this test can easily be failed when things are working as intended, just by changing the step order
-# but I'd like to enforce the step order for now so that this test makes sense.
 
-# peakinds returns from lowest counts to highest counts
-# lets take the largest peaks and match them up to their known energies from distenergies
-peakinds = findpeaks(eh, fwhm=15, n=length(dist_energies))
-found_energies = sort(bin_centers(eh)[peakinds])
-fvh = c[:filt_value_hist]
-peakinds_filt_value = findpeaks(fvh, fwhm=15, n=length(dist_energies))
-found_filt_values = sort(bin_centers(fvh)[peakinds])
-cal = c[:calibration]
 
-# filt value agrees with manual calculation
-fvmanual = [dot(p, c[:whitenoise_filter]) for p in c[:pulse][:]]
-@test fvmanual == c[:filt_value][:] 
 
-@test all(abs(found_energies-dist_energies).<15) # check that the calibration has the correct peak assignment
-close(jld)
+# function dosteps!(c::Channel, steps::Vector{AbstractStep})
+# 	haskey(c, :exception_info)  && return # stop doing steps on this channel afte error
+# 	workdone_cumulative = c[:workdone_cumulative]
+# 	stepelapsed_cumulative = c[:stepelapsed_cumulative]
+# 	for (i,s) in enumerate(steps)
+# 		try
+# 			tstart = time()
+# 			wu = workunits(dostep!(s,c))
+# 			stepelapsed = time()-tstart
+# 			workdone_cumulative[j] += wu 
+# 			stepelapsed_cumulative[j] += stepelapsed
+# 		catch ex
+# 			if isa(ex, InterruptException) # rethrow Ctrl-C
+# 				rethrow(ex)
+# 			else # store a backtrace of the exception
+# 				ex_str = sprint() do io
+# 					showerror(io, ex)
+# 					print(io,"\n")
+# 					Base.show_backtrace(io, catch_backtrace())
+# 					end
+# 				c[:exception_info] = ex_str
+# 				# add debug step string? debug(s,c)
+# 				warn(string(c[:name], " had error:"))
+# 				println(ex_str)
+# 				return # stop doing steps on this channel afte error
+# 			end
+# 		end
+# 	end
+# end
+# dosteps!(c::Channel) = dosteps!(c, c[:steps])
+
+# close(jldopen(filename(c),"w")) # wipe the test file
+# for i = 1:4
+# 	println("** loop iteration $i")
+# 	dosteps!(c)
+# end
+# [println("step $i: "*workstat(c[:workdone_cumulative][i], c[:steps][i], c[:stepelapsed_cumulative][i])) for i = 1:length(steps)];
+# [println("$n donethru $(donethru(c[n]))") for n in keys(c)];
+# jld = jldopen(filename(c), "r+")
+
+# using Base.Test
+
+# eh = c[:energy_hist]
+# @test counted(eh) == sum(counts(eh))
+# #@test counted(eh) == sum(c[:selection_good]) # this test can easily be failed when things are working as intended, just by changing the step order
+# # but I'd like to enforce the step order for now so that this test makes sense.
+
+# # peakinds returns from lowest counts to highest counts
+# # lets take the largest peaks and match them up to their known energies from distenergies
+# peakinds = findpeaks(eh, fwhm=15, n=length(dist_energies))
+# found_energies = sort(bin_centers(eh)[peakinds])
+# fvh = c[:filt_value_hist]
+# peakinds_filt_value = findpeaks(fvh, fwhm=15, n=length(dist_energies))
+# found_filt_values = sort(bin_centers(fvh)[peakinds])
+# cal = c[:calibration]
+
+# # filt value agrees with manual calculation
+# fvmanual = [dot(p, c[:whitenoise_filter]) for p in c[:pulse][:]]
+# @test fvmanual == c[:filt_value][:] 
+
+# @test all(abs(found_energies-dist_energies).<15) # check that the calibration has the correct peak assignment
+# close(jld)

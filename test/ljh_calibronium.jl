@@ -50,6 +50,8 @@ using ReferenceMicrocalFiles
 
 ljhpaths = ReferenceMicrocalFiles.getljhpaths()
 ljh = LJHGroup(ljhpaths[1])
+ljh[1]
+print("yo")
 
 
 steps = AbstractStep[]
@@ -83,7 +85,7 @@ push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc,:ljh_group)
 
-c=Channel()
+c=MassChannel()
 # c[:ljh_group] = ljh
 c[:pretrig_mean] = RunningVector(Float64)
 c[:pretrig_rms] = RunningVector(Float64)
