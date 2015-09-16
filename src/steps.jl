@@ -195,7 +195,7 @@ function dostep!(s::FreeMemoryStep, c::MassChannel)
 		freeuntil!(d,min(earliest_needed_index(q,c,s.graph)-1,length(d)))
 		n_freed += l0-length(available(d))
 	end
-	n_freed # return 1 unit of work done
+	n_freed # steps must return an int that increases with amount of work done, and is zero when no work is done
 end
 
 ## Get Pulses Step
@@ -207,7 +207,6 @@ type GetPulsesStep{T} <: AbstractStep
 	max_pulses_per_step::Int
 end
 inputs(s::GetPulsesStep) = Symbol[]
-# placeholder versions of exists, probably would use Nullable types here
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
@@ -221,6 +220,20 @@ function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r
 end
 graphlabel(s::GetPulsesStep) = repr(typeof(s))
+
+
+type MemoryLimitStep <: AbstractStep
+	maxbytes::Int
+end
+graphlabel(s::MemoryLimitStep) = "MemoryLimitStep"
+inputs(s::MemoryLimitStep) = Symbol[]
+outputs(s::MemoryLimitStep) = Symbol[]
+function dostep!(s::MemoryLimitStep, c::MassChannel)
+	usedbytes = Base.summarysize(c)
+	usedbytes > s.maxbytes && error("MemoryLimitStep with maxbytes=$(s.maxbytes) noticed MassChannel using $usedbytes")
+	0
+end
+
 
 
 # JLD/HDF5 helper functions for ToJLDStep
@@ -241,16 +254,17 @@ end
 graphlabel(s::ToJLDStep) = "to JLD"
 outputs(s::ToJLDStep) = []
 function dostep!(s::ToJLDStep,c::MassChannel)
-	jld = jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w")
 	n_written = 0
-	for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
-		d=d_require(jld, string(sym), eltype(value)) 
-		# account for the fact that the dataset is created with 1 element, not zero 			
-		start = length(d)==1 ? 1 : length(d)+1
-		r = start:length(value)
-		n_written += length(r)
-		if length(r)>0
-			d_extend(d, value[r],r)
+	jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w") do jld
+		for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
+			d=d_require(jld, string(sym), eltype(value)) 
+			# account for the fact that the dataset is created with 1 element, not zero 			
+			start = length(d)==1 ? 1 : length(d)+1
+			r = start:length(value)
+			n_written += length(r)
+			if length(r)>0
+				d_extend(d, value[r],r)
+			end
 		end
 	end
 	# JLD.delete! doesn't work well enough to to this, it can leave spare references around
@@ -258,7 +272,6 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	# 	# warn("doesn't work if you do it more than once")
 	# 	# update!(jld, string(sym), value)
 	# end
-	close(jld)
 	n_written # return workunits info
 end #dostep!
 

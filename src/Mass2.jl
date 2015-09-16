@@ -11,6 +11,7 @@ include("runningvectors.jl")
 include("steps.jl")
 include("calibration.jl")
 include("corrections.jl")
+include("ljhutil.jl")
 module Mass2
 
 # package code goes here

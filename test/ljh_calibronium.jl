@@ -50,8 +50,7 @@ using ReferenceMicrocalFiles
 
 ljhpaths = ReferenceMicrocalFiles.getljhpaths()
 ljh = LJHGroup(ljhpaths[1])
-ljh[1]
-print("yo")
+
 
 
 steps = AbstractStep[]

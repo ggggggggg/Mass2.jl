@@ -37,14 +37,14 @@ function compute_summary(pulseiterator, Npre, frame_time)
     post_peak_deriv_vect = zeros(Float64, Npost)
     for (p, data) in enumerate(pulseiterator)
         # Pretrigger computation first
-        s = s2 = 0.0
+        s = s2 = 0
         min_idx = 0
         peak_idx = 0
         peak_val = Uint16(0)
         min_idx = 0
         min_val = typemax(Uint16)
         for j = 1:Npre
-            d=data[j]
+            d=Int(data[j])
             if d > peak_val 
                 peak_idx, peak_val = j, d
             elseif d < min_val
@@ -58,9 +58,9 @@ function compute_summary(pulseiterator, Npre, frame_time)
         summary.pretrig_rms[p] = sqrt(abs(s2/Npre - ptm*ptm))
 
         # Now post-trigger calculations
-        s = s2 = 0.0
+        s = s2 = 0
         for j = Npre+1:Nsamp
-            d=data[j]
+            d=Int(data[j])
             if d > peak_val 
                 peak_idx, peak_val = j, d
             elseif d < min_val
