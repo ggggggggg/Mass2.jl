@@ -2,7 +2,9 @@ using Mass2
 import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
 
-
+"selectfromcriteria(x...)
+selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and 
+returns a bitvector that is true if all indictors pass criteria[1] .< indicator .< criteria[2]"
 function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby a bit slow
 	iseven(length(x)) || error("x must be indicator,criteria,indicator,criteria...")
 	out = trues(length(x[1]))
@@ -13,6 +15,9 @@ function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby 
 	out
 end
 
+"readcontinuous(ljh,maxnpoints=50_000_000)
+read from an LJH file, return pulses concatonated together to form a continuour vector 
+reads either the whole file, or until maxnpoints"
 function readcontinuous(ljh,maxnpoints=50_000_000)
 	nsamp = LJH.record_nsamples(ljh)
 	maxnpoints = nsamp*div(maxnpoints, nsamp)
@@ -24,11 +29,16 @@ function readcontinuous(ljh,maxnpoints=50_000_000)
 	data
 end
 
+"compute_noise_autocorr(ljh_filename, nsamp)
+computer noise autorcorrelation of length namp from an ljh file of name ljh_filename"
 function compute_noise_autocorr(ljh_filename, nsamp)
 	data = readcontinuous(LJH.LJHGroup(ljh_filename))
 	autocorrelation(data, nsamp, 600) # final argument is max_excursion
+	# this needs a revamp to reject fewer noise records and also return delta_f
 end
 
+"compute_average_pulse(pulse, selection_good)
+compute the average (mean) the good pulses in pulse. good determined by bitvector selection_good"
 function compute_average_pulse(pulse, selection_good) 
 	sumpulse = zeros(Int64, length(pulse[1]))
 	n=0
@@ -41,6 +51,9 @@ function compute_average_pulse(pulse, selection_good)
 	meanpulse = sumpulse/n
 end
 
+"compute_filter(average_pulse, noise_autocorr, f_3db, dt)\n
+compute filter given average_pulse and noise_autorr of same length, f_3db in hz, dt in seconds
+return `filter`, `vdv`"
 function compute_filter(average_pulse, noise_autocorr, f_3db, dt)
 	filter, variance = calculate_filter(average_pulse, noise_autocorr, f_3db, dt)
 	filter*=maximum(average_pulse)-minimum(average_pulse) # like mass, normalize so you get pulseheight similar to raw units
@@ -48,7 +61,7 @@ function compute_filter(average_pulse, noise_autocorr, f_3db, dt)
 	filter,vdv
 end
 
-push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowstamp,
+push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase)
 
@@ -72,9 +85,9 @@ function setup_channel(ljh_filename, noise_filename)
 	c[:selection_good] = RunningSumBitVector()
 	c[:filt_value_hist] = Histogram(0:1:20000)
 	c[:pulse] = RunningVector(Vector{UInt16})
-	c[:rowstamp] = RunningVector(Int)
+	c[:rowcount] = RunningVector(Int)
 	c[:pre_samples] = LJH.pretrig_nsamples(ljh)
-	c[:nsamp] = LJH.record_nsamples(ljh)
+	c[:samples_per_record] = LJH.record_nsamples(ljh)
 	c[:frame_time] = LJH.frametime(ljh)
 	c[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
 	c[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
@@ -91,20 +104,26 @@ function setup_channel(ljh_filename, noise_filename)
 	c[:ljh_filename]=ljh_filename
 	c[:name] = "summarize and filter test"
 	c[:hdf5_filename] = "$(splitext(ljh_filename)[1]).hdf5"
+	c[:trick_mass_str]="this is exists only so that the group filters will exist so mass will skip work in compute_filters"
 	isfile(c[:hdf5_filename]) && rm(c[:hdf5_filename])
 
 	steps = AbstractStep[]
-	push!(steps, GetPulsesStep(ljh, [:pulse, :rowstamp], 0,100))
+	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount], 0,100))
 	push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :rise_time, :rise_time_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
 	push!(steps, ThresholdStep(compute_average_pulse, [:pulse, :selection_good], [:average_pulse], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frame_time], [:filter, :vdv], :selection_good, sum, 100, true))
-	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :nsamp],[:noise_autocorr], :selection_good, sum, 100, true))
+	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
 	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index, 
-	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value],c[:hdf5_filename]))
+	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
+	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frame_time=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse", 
+	:average_pulse=>"average_pulse",
+	:samples_per_record=>"samples_per_record", :frame_time=>"frametime", :pre_samples=>"pre_samples",
+	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
+	c[:hdf5_filename]))
 	push!(steps, FreeMemoryStep(graph(steps)))
 	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if c uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
@@ -126,77 +145,32 @@ function autoender(c::MassChannel, tasks, exitchannels)
 	end
 end
 
-function repeatstep(c::MassChannel, s::AbstractStep, exitchannel::Channel{Int})
-	workdone_cumulative=0
-	time_elapsed_cumulative=0
-	while !isready(exitchannel)
-		# do the step, record workdone and time elapsed
-		time_elapsed = @elapsed workdone = workunits(dostep!(s,c))
-		workdone_cumulative+=workdone
-		time_elapsed_cumulative+=time_elapsed
-		c[:workdone_cumulative][s] = workdone_cumulative
-		c[:stepelapsed_cumulative][s] = time_elapsed_cumulative
-		c[:workdone_last][s] = workdone
-		yield()
-	end
-end
 
 function launch_channel(ljh_filename, noise_filename)
-	yield()
-	c = setup_channel(ljh_filename, noise_filename)
-	c[:tasks] = Dict()
-	c[:exitchannels] = Dict()
-	for s in c[:steps]
-		exitchannel = Channel{Int}(1)
-		c[:tasks][s] = @schedule repeatstep(c, s, exitchannel)
-		c[:exitchannels][s] = exitchannel
-	end
-	c[:endertask] = @task autoender(c,c[:tasks],c[:exitchannels])
-	c
-end
-
-function launch_channel2(ljh_filename, noise_filename)
-	c = setup_channel(ljh_filename, noise_filename)
-	exitchannel = Channel{Int}(1)
-	c[:exitchannels] = Dict(1=>exitchannel)
-	t=@schedule while !isready(exitchannel)
-		for s in c[:steps]
-			yield()
-			time_elapsed = @elapsed workdone = workunits(dostep!(s,c))
-			workdone_cumulative = get(c[:workdone_cumulative],s,0)
-			c[:workdone_cumulative][s] = workdone_cumulative+workdone
-			time_elapsed_cumulative = get(c[:stepelapsed_cumulative],s,0)
-			c[:stepelapsed_cumulative][s] = time_elapsed_cumulative+workdone	
-			c[:workdone_last][s] = workdone
-		end
-	end		
-	c[:tasks] = Dict(1=>t)
-	c[:endertask] = @task autoender(c,c[:tasks],c[:exitchannels])
-	c
-end
-
-function launch_channel3(ljh_filename, noise_filename)
 	c = setup_channel(ljh_filename, noise_filename)
 	exitchannel = Channel{Int}(1)
 	c[:exitchannels] = Dict(1=>exitchannel)
 	c[:workdone_last] = Dict()
-	t=@task while !isready(exitchannel)
-		for s in c[:steps]
-			yield()
-			time_elapsed = @elapsed workdone = workunits(dostep!(s,c))
-			workdone_cumulative = get(c[:workdone_cumulative],s,0)
-			c[:workdone_cumulative][s] = workdone_cumulative+workdone
-			time_elapsed_cumulative = get(c[:stepelapsed_cumulative],s,0)
-			c[:stepelapsed_cumulative][s] = time_elapsed_cumulative+time_elapsed	
-			c[:workdone_last][s] = workdone
-		end
-	end		
-	c[:tasks] = Dict(1=>t)
+	t=@task begin   while !isready(exitchannel)
+						for s in c[:steps]
+							yield()
+							time_elapsed = @elapsed workdone = workunits(dostep!(s,c))
+							workdone_cumulative = get(c[:workdone_cumulative],s,0)
+							c[:workdone_cumulative][s] = workdone_cumulative+workdone
+							time_elapsed_cumulative = get(c[:stepelapsed_cumulative],s,0)
+							c[:stepelapsed_cumulative][s] = time_elapsed_cumulative+time_elapsed	
+							c[:workdone_last][s] = workdone
+						end
+					end
+					h5open(c[:hdf5_filename],"r+") do h5
+					h5["clean_exit_posix_s"]=time()
+					end # note when/if analysis was finished without error, will be used to tag "good" hdf5 files
+			end		
+	c[:tasks] = Dict(1=>t) # only one task, it's in a dict for compatability with having a task per step
+	c[:wait_tasks] = [@schedule(try wait(t) end) for t in values(c[:tasks])] # supress printing of error messages
 	c[:endertask] = @task autoender(c,c[:tasks],c[:exitchannels])
 	c
 end
-
-
 
 function automass(masschannels, exitchannel)
 	ljhname, writingbool = "",false
@@ -227,7 +201,7 @@ function automass(masschannels, exitchannel)
 				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
-					masschannels[channums[i]] = launch_channel3(ljh_filenames[i], noise_filenames[i])
+					masschannels[channums[i]] = launch_channel(ljh_filenames[i], noise_filenames[i])
 				end
 				tsetup = time()
 				info("setup $(length(channums)) channels in $(tsetup-t0) seconds")
@@ -266,3 +240,12 @@ else
 	println("open file limit is too low, try ulimit -n 1000")
 end
 
+@schedule begin
+	tasks = [mc[:tasks][1] for (ch, mc) in masschannels]
+	for task in tasks # wait for all tasks to finish
+		try wait(task) end # wait rethrows errors from failed tasks, we can always look at them later
+	end
+	ndone = sum([task.state==:done for task in tasks])
+	nfailed = sum([task.state==:failed for task in tasks])
+	info("all tasks done!! Yay. $ndone :done and $nfailed :failed")
+end;

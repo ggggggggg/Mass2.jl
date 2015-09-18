@@ -24,6 +24,7 @@ type PerPulseStep <: AbstractStep
 end
 type ToJLDStep <:AbstractStep
 	inputs::Vector{Symbol}
+	one_time_inputs::Vector{Pair{Symbol, ASCIIString}}
 	jldfilename::AbstractString
 end	
 type HistogramStep <: AbstractStep
@@ -257,6 +258,7 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	n_written = 0
 	jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w") do jld
 		for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
+			length(value) == 0 && continue #don't create 1 entry datasets with no meaninful data in them
 			d=d_require(jld, string(sym), eltype(value)) 
 			# account for the fact that the dataset is created with 1 element, not zero 			
 			start = length(d)==1 ? 1 : length(d)+1
@@ -265,6 +267,11 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 			if length(r)>0
 				d_extend(d, value[r],r)
 			end
+		end
+		for (sym, path) in s.one_time_inputs
+			has(jld.plain, path) && continue # if something is already written to the path, move on
+			haskey(c,sym) || continue # if the symbol doesn't exist in the masschannel dict, move on
+			jld[path]=c[sym] # otherwise write to file
 		end
 	end
 	# JLD.delete! doesn't work well enough to to this, it can leave spare references around
