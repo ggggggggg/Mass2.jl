@@ -14,7 +14,7 @@ immutable LJHHeader
     timestampOffset  ::Float64
     date             ::String
     headerSize       ::Int64
-    channum          ::Uint16
+    channum          ::Int16
     column           ::Int16
     row              ::Int16
     num_columns      ::Int16
@@ -33,7 +33,7 @@ type LJHFile
     npre             ::Int64         # nPresample
     nsamp            ::Int64         # number of sample per record
     reclength        ::Int64         # record length (bytes) including timestamp
-    channum          ::Uint16        # channel number 
+    channum          ::Int16         # channel number
     column           ::Int16
     row              ::Int16
     num_columns      ::Int16
@@ -104,7 +104,7 @@ function readLJHHeader(filename::String)
 
     # Read channel # from the file name, then update that result from the header, if it exists.
     m = match(r"_chan\d+", filename)
-    channum = parse(Uint16,m.match[6:end])
+    channum = parse(Int16,m.match[6:end])
 
     while nlines<maxnlines
         line=readline(str)
@@ -120,7 +120,7 @@ function readLJHHeader(filename::String)
         elseif startswith(line,labels["date1"])# Newer LJH files
             date = line[25:end-2]
         elseif startswith(line,labels["channum"])# Newer LJH files
-            channum = Uint16(parse(line[10:end]))
+            channum = Int16(parse(line[10:end]))
         elseif startswith(line,labels["offset"])
             timestampOffset = parse(Float64,line[1+length(labels["offset"]):end])
         elseif startswith(line,labels["pre"])
