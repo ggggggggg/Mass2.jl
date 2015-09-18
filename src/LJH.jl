@@ -342,24 +342,6 @@ function record_row_count_v21(header::Vector{Uint8}, num_rows::Integer, row::Int
     return count_row, 4*count_4usec
 end
 
-#### Joe note to self: all below here is for WRITING LJH files.
-#### Convert all the to write ljh 2.2.0 files, someday.
-
-# Six-byte pulse record header (LJH version 2.1.0), given time in microseconds
-recordHeader(t::Uint64) = recordHeader(t, Array(Uint8,6))
-
-# Allocation-free version
-function recordHeader(t::Uint64, header::Vector{Uint8})
-    frac = div(t%1000,4)
-    ms = UInt32(div(t,1000))
-    header[1] = UInt8(frac)
-    header[2] = UInt8(0)
-    header[3] = UInt8(0xFF & ms)
-    header[4] = UInt8(0xFF & (ms >> 8))
-    header[5] = UInt8(0xFF & (ms >> 16))
-    header[6] = UInt8(0xFF & (ms >> 24))
-    return header
-end
 
 # writing ljh files
 function writeLJHHeader(filename::String,dt,npre,nsamp)
@@ -428,13 +410,14 @@ function writeLJHData(filename::String, a...)
     writeLJHData(f,a...)
     end
 end
-function writeLJHData(io::IO,traces::Array{Uint16,2}, times::Vector{Uint64})
+function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Uint64}, times::Vector{Uint64})
     for j = 1:length(times)
-        writeLJHData(io, traces[:,j], times[j])
+        writeLJHData(io, traces[:,j], rows[j], times[j])
     end
 end
-function writeLJHData(io::IO, trace::Vector{Uint16}, time::Uint64)
-    [write(io,t) for t in recordHeader(time)] # write 6 Uint8s that represent the time
+function writeLJHData(io::IO, trace::Vector{Uint16}, row::Uint64, time::Uint64)
+    write(io, row)
+    write(it, time)
     write(io, trace)
 end
 
