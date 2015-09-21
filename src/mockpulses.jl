@@ -16,6 +16,7 @@ type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
     quiescent_modulation_period_points::Float64
     quiescent_modulation_amplitude::Float64
     last_rowstamp::Int
+	last_timestamp::Int
     trigger_points_std::Float64 # std of where it triggers relative to actualy arrival time in points (aka frames)
     d_amp_d_quiescent::Float64 # pretrigger mean/amplitude correlation
     function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,trigger_points_std,d_amp_d_quiescent)
@@ -31,7 +32,7 @@ function two_exponential_pulses(
 	pulse = Array(Float64, points)
 	fill!(pulse, quiescent_value)
 	@assert length(arrival_point) == length(amplitude)
-	k=kfactor(1/rise_points,1/fall_points) 
+	k=kfactor(1/rise_points,1/fall_points)
 	for (ap, amp) in zip(arrival_point, amplitude)
 		@inbounds for i = 1:points
 			t = i-ap
@@ -44,16 +45,16 @@ end
 # factor for calculating mathematical parameters from physical parameters and maintainging
 # constant amplitude
 # Otto-von-Guericke Univ. Magdeburg, Magdeburg, Germany
-# IEEE Transactions on Electromagnetic Compatibility (Impact Factor: 1.35). 12/2010; DOI: 10.1109/TEMC.2010.2052621 
+# IEEE Transactions on Electromagnetic Compatibility (Impact Factor: 1.35). 12/2010; DOI: 10.1109/TEMC.2010.2052621
 # Estimation of the Mathematical Parameters of Double-Exponential Pulses Using the Nelder–Mead Algorithm - ResearchGate. Available from: http://www.researchgate.net/publication/224153186_Estimation_of_the_Mathematical_Parameters_of_Double-Exponential_Pulses_Using_the_NelderMead_Algorithm [accessed Mar 20, 2015].kfactor(a,b) = 1/(exp(-a*(log(a/b)/(a-b)))-exp(-b*(log(a/b)/(a-b))))
 kfactor(a,b) = 1/(exp(-a*(log(a/b)/(a-b)))-exp(-b*(log(a/b)/(a-b)))) # memoize?
 # const X = [0.842411, 1.660852, 8.887335, 0.624129]
-# const Y = [2.167370, 0.360349, 0.013289, 1.358701, 0.137057, 122.802861, 1.314850] 
+# const Y = [2.167370, 0.360349, 0.013289, 1.358701, 0.137057, 122.802861, 1.314850]
 # alpha(t_rise, t_fwhm) = (X[1]/((t_fwhm/t_rise)^X[2]-X[3])^X[4])/t_rise
 # beta(t_rise, t_fwhm) = (Y[1]-Y[2]*exp(-t_fwhm*Y[3]/t_rise)-Y[4]*exp(-t_fwhm*Y[5]/t_rise)-Y[6]*exp(-t_fwhm*Y[7]/t_rise))/t_rise
 
 white_noise(points::Int, noise_fwhm) = rand(points)*noise_fwhm/(2*sqrt(2*log(2))) # fwhm to std
-function white_noise!(pulse, noise_fwhm) 
+function white_noise!(pulse, noise_fwhm)
 	@inbounds for i = 1:length(pulse) pulse[i]+=randn()*noise_fwhm end
 	pulse
 end
@@ -61,7 +62,7 @@ to_type_and_white_noise{T<:Integer}(::Type{T}, noise_fwhm, pulse) = convert(Vect
 
 
 function getcleanpulse{T}(pg::TwoExponentialPulseGenerator{T}, amp)
-	to_type_and_white_noise(T, pg.noise_fwhm, 
+	to_type_and_white_noise(T, pg.noise_fwhm,
 		two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, pg.quiescent_average, (pg.pre_rise_points+1,), (amp,)))
 end
 function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
@@ -70,8 +71,11 @@ function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
 		, pg.pre_rise_points+rand(Normal(0,pg.trigger_points_std))+1, pg.pre_rise_points+points_to_next+1)
 
 	last_rowstamp = pg.last_rowstamp
+	last_timestamp = pg.last_timestamp
 	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)
-	pg.last_rowstamp=rowstamp
+	timestamp = round(last_timestamp + points_from_last*pg.samples_per_second*1e6)
+	pg.last_rowstamp = rowstamp
+	pg.last_timestamp = timestamp
 
 	quiescent_value_modulation = pg.quiescent_modulation_amplitude*sinpi(2*rowstamp/(pg.quiescent_modulation_period_points*pg.numrows))
 	quiescent_value = pg.quiescent_average+quiescent_value_modulation
@@ -84,20 +88,19 @@ function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T})
 
 	pulse = two_exponential_pulses(pg.record_length, pg.rise_points, pg.fall_points, quiescent_value, arrival_points, amplitudes_tuple)
 	pulse = to_type_and_white_noise(T, pg.noise_fwhm, pulse)
-	last_rowstamp = pg.last_rowstamp
-	rowstamp = round(last_rowstamp+points_from_last*pg.numrows)
-	pg.last_rowstamp=rowstamp
-	pulse, rowstamp
+	pulse, rowstamp, timestamp
 end
 function gettriggeredpulse!{T}(pg::TwoExponentialPulseGenerator{T},n)
 	pulses = Array(Vector{T},n)
 	rowstamps = Array(Int, n)
+	timestamps = Array(Int, n)
 	for i = 1:n
-		pulse, rowstamp = gettriggeredpulse!(pg)
+		pulse, rowstamp, timestamp = gettriggeredpulse!(pg)
 		pulses[i] = pulse
 		rowstamps[i] = rowstamp
+		timestamps[i] = timestamp
 	end
-	pulses, rowstamps
+	pulses, rowstamps, timestamps
 end
 times_s(pg) = range(0,1/pg.samples_per_second, pg.record_length)
 
@@ -115,4 +118,3 @@ times_s(pg) = range(0,1/pg.samples_per_second, pg.record_length)
 # 	rowstamp_diffs[1]+=last_rowstamp
 # 	cumsum(convert(Vector{Int}, round(rowstamp_diffs)))
 # end
-

@@ -26,7 +26,7 @@ type ToJLDStep <:AbstractStep
 	inputs::Vector{Symbol}
 	one_time_inputs::Vector{Pair{Symbol, ASCIIString}}
 	jldfilename::AbstractString
-end	
+end
 type HistogramStep <: AbstractStep
 	func::Function
 	inputs::Vector{Symbol}
@@ -54,7 +54,7 @@ inputs(s::AbstractStep) = s.inputs
 outputs(s::AbstractStep) = s.outputs
 inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in inputs(s)]
 outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in outputs(s)]
-inputs(s::AbstractStep, c::MassChannel, r::UnitRange{Int}) = 
+inputs(s::AbstractStep, c::MassChannel, r::UnitRange{Int}) =
 [isperpulse(q)?c[q][r]:c[q] for q in s.inputs]
 perpulse_inputs(s::AbstractStep) = inputs(s)[[isperpulse(q) for q in inputs(s)]]
 perpulse_outputs(s::AbstractStep) = outputs(s)[[isperpulse(q) for q in outputs(s)]]
@@ -88,7 +88,7 @@ function debug(s::AbstractStep, c::MassChannel)
 	end
 	println("perpulse outputs")
 	for po in perpulse_outputs(s)
-		try 
+		try
 			println((po, typeof(c[po]), donethru(c[po])))
 		catch
 			println("c[:$po] doesn't exist")
@@ -96,7 +96,7 @@ function debug(s::AbstractStep, c::MassChannel)
 	end
 	println("other outputs")
 	for oo in other_outputs(s)
-		try 
+		try
 			println((oo, typeof(c[oo]), donethru(c[oo])))
 		catch
 			println("c[:$oo] doesn't exist")
@@ -211,12 +211,14 @@ inputs(s::GetPulsesStep) = Symbol[]
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
-	pulses, rowstamps = collect(s.pulse_source[r])
-	pulses_out, rowstamps_out = perpulse_outputs(s,c)
+	pulses, rowstamps, timestamps = collect(s.pulse_source[r])
+	pulses_out, rowstamps_out, timestamps_out = perpulse_outputs(s,c)
 	append!(pulses_out, pulses)
 	assert(length(pulses_out)==last(r))
 	append!(rowstamps_out, rowstamps)
 	assert(length(rowstamps_out)==last(r))
+	append!(timestamps_out, timestamps)
+	assert(length(timestamps_out)==last(r))
 	s.previous_pulse_index=last(r)
 	r
 end
@@ -259,8 +261,8 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w") do jld
 		for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
 			length(value) == 0 && continue #don't create 1 entry datasets with no meaninful data in them
-			d=d_require(jld, string(sym), eltype(value)) 
-			# account for the fact that the dataset is created with 1 element, not zero 			
+			d=d_require(jld, string(sym), eltype(value))
+			# account for the fact that the dataset is created with 1 element, not zero
 			start = length(d)==1 ? 1 : length(d)+1
 			r = start:length(value)
 			n_written += length(r)
@@ -364,10 +366,10 @@ end
 # so I'm commenting it until that is resolved
 # gviz = GraphViz.Graph(dot)
 # GraphViz.layout!(gviz,engine="dot")
-# 	open("$fname.svg","w") do f 
+# 	open("$fname.svg","w") do f
 # 	       GraphViz.writemime(f, MIME"image/svg+xml"(),gviz)
 # 	end #do
-# 	open("$fname.png","w") do f 
+# 	open("$fname.png","w") do f
 # 	       GraphViz.writemime(f, MIME"image/png"(),gviz)
 # 	end #do
 
@@ -393,7 +395,7 @@ function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
 	close(jld)
 	l
 end
-function earliest_needed_index(parent::Symbol, c::MassChannel, g::AbstractGraph) 
+function earliest_needed_index(parent::Symbol, c::MassChannel, g::AbstractGraph)
 	v = vertex(g,string(parent))
 	children_vertices = Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) # consider memoizing this
 	shift!(children_vertices) # remove the first element, which is always v
