@@ -1,3 +1,5 @@
+import Base: +
+
 type Histogram
 	x::FloatRange{Float64}
 	counts::Vector{Int}
@@ -24,6 +26,10 @@ donethru(h::Histogram) = h.seen
 function update_histogram!(h::Histogram, selection, x)
 	addcounts!(h,x[selection])
 	addseen!(h,length(selection)-sum(selection))
+end
+function (+)(a::Histogram, b::Histogram)
+	@assert edges(a)==edges(b) "adding histograms only supported if the x is the same, a has $(edges(a)), b has $(edges(b))"
+	c = Histogram(edges(a), a.counts + b.counts, a.seen + b.seen, a.counted + b.counted)
 end
 
 
