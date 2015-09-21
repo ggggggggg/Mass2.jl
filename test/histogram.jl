@@ -29,7 +29,7 @@ update_histogram!(h, s, events)
 
 
 # test interface to KernelDensity
-uvh = uvhist(1:100, [1:100])
+uvh = uvhist(1:100, collect(1:100))
 @test edges(uvh)==1:100
 @test density(uvh)==ones(99)
 conv(h, Normal(0,1))
