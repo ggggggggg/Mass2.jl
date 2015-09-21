@@ -166,8 +166,8 @@ function fileRecords(f::LJHFile, nrec::Integer, rows::Vector{Uint64},
         end
     elseif f.version == :LJH_22
         for i=1:nrec
-            rows[i] = read(f.str, Uint64, 8)
-            times[i] = read(f.str, Uint64, 8)
+            rows[i] = read(f.str, Int64)
+            times[i] = read(f.str, Int64)
             data[:,i] = read(f.str, Uint16, f.nsamp)
         end
     else
@@ -188,8 +188,8 @@ function Base.pop!(f::LJHFile)
     if f.version == :LJH_21
         row_count, time_usec =  record_row_count_v21(read(f.str, Uint8, 6), f.num_rows, f.row, f.dt)
     elseif f.version == :LJH_22
-        row_count = read(f.str, Uint64, 8)
-        time_usec = read(f.str, Uint64, 8)
+        row_count = read(f.str, Int64)
+        time_usec = read(f.str, Int64)
     end
     data = read(f.str, Uint16, f.nsamp)
     data, row_count, time_usec
