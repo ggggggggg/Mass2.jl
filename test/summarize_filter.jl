@@ -1,6 +1,7 @@
 using Mass2
 import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
+using ZMQ
 
 "selectfromcriteria(x...)
 selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and 
@@ -63,49 +64,52 @@ end
 
 push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
-	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase)
+	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy)
 
 function setup_channel(ljh_filename, noise_filename)
 	ljh = LJHGroup(ljh_filename)
 
 
 
-	c=MassChannel()
-	c[:pretrig_mean] = RunningVector(Float32)
-	c[:pretrig_rms] = RunningVector(Float32)
-	c[:pulse_average] = RunningVector(Float32)
-	c[:pulse_rms] = RunningVector(Float32)
-	c[:rise_time] = RunningVector(Float32)
-	c[:postpeak_deriv] = RunningVector(Float32)
-	c[:peak_index] = RunningVector(Uint16)
-	c[:peak_value] = RunningVector(Uint16)
-	c[:min_value] = RunningVector(Uint16)
-	c[:filt_value] = RunningVector(Float32)
-	c[:filt_phase] = RunningVector(Float32)
-	c[:selection_good] = RunningSumBitVector()
-	c[:filt_value_hist] = Histogram(0:1:20000)
-	c[:pulse] = RunningVector(Vector{UInt16})
-	c[:rowcount] = RunningVector(Int)
-	c[:pre_samples] = LJH.pretrig_nsamples(ljh)
-	c[:samples_per_record] = LJH.record_nsamples(ljh)
-	c[:frame_time] = LJH.frametime(ljh)
-	c[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
-	c[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
-	c[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
-	c[:f_3db] = 10000
+	mc=MassChannel()
+	mc[:pretrig_mean] = RunningVector(Float32)
+	mc[:pretrig_rms] = RunningVector(Float32)
+	mc[:pulse_average] = RunningVector(Float32)
+	mc[:pulse_rms] = RunningVector(Float32)
+	mc[:rise_time] = RunningVector(Float32)
+	mc[:postpeak_deriv] = RunningVector(Float32)
+	mc[:peak_index] = RunningVector(Uint16)
+	mc[:peak_value] = RunningVector(Uint16)
+	mc[:min_value] = RunningVector(Uint16)
+	mc[:filt_value] = RunningVector(Float32)
+	mc[:filt_phase] = RunningVector(Float32)
+	mc[:energy] = RunningVector(Float32)
+	mc[:selection_good] = RunningSumBitVector()
+	mc[:filt_value_hist] = Histogram(0:1:20000)
+	mc[:energy_hist] = Histogram(0:1:20000)
+	mc[:pulse] = RunningVector(Vector{UInt16})
+	mc[:rowcount] = RunningVector(Int)
+	mc[:pre_samples] = LJH.pretrig_nsamples(ljh)
+	mc[:samples_per_record] = LJH.record_nsamples(ljh)
+	mc[:frame_time] = LJH.frametime(ljh)
+	mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
+	mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
+	mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
+	mc[:f_3db] = 10000
+	mc[:known_energies] = [6403.84, 7057.98] # FeKAlpha and FeKBeta
 
 	#metadata
-	c[:workdone_cumulative] = Dict{AbstractStep, Int64}()
-	c[:stepelapsed_cumulative] = Dict{AbstractStep, Float64}()
-	#c[:workdone_last] = Dict{AbstractStep, Int64}([s=>-1 for s in steps]) # start with nonzero values so autoender won't end before starting
-	c[:workdone_last] = Dict{AbstractStep, Int64}() 
+	mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
+	mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
+	mc[:workdone_last] = Dict{AbstractStep, Int64}() 
+	mc[:calibration_nextra] = 0 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
-	c[:noise_filename]=noise_filename
-	c[:ljh_filename]=ljh_filename
-	c[:name] = "summarize and filter test"
-	c[:hdf5_filename] = "$(splitext(ljh_filename)[1]).hdf5"
-	c[:trick_mass_str]="this is exists only so that the group filters will exist so mass will skip work in compute_filters"
-	isfile(c[:hdf5_filename]) && rm(c[:hdf5_filename])
+	mc[:noise_filename]=noise_filename
+	mc[:ljh_filename]=ljh_filename
+	mc[:name] = "summarize and filter test"
+	mc[:hdf5_filename] = "$(splitext(ljh_filename)[1]).hdf5"
+	mc[:oncleanfinish] = markhdf5oncleanfinish
+	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
 	steps = AbstractStep[]
 	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount], 0,100))
@@ -117,62 +121,26 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
+	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
+	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
+	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index, 
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frame_time=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse", 
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frame_time=>"frametime", :pre_samples=>"pre_samples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
-	c[:hdf5_filename]))
+	mc[:hdf5_filename]))
 	push!(steps, FreeMemoryStep(graph(steps)))
-	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if c uses more than 4 MB
+	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
-	c[:steps]=steps
+	mc[:steps]=steps
 
-
-	c
+	make_task(mc)
+	mc
 end
 
-function autoender(c::MassChannel, tasks, exitchannels)
-	while true
-		if all(collect(values(c[:workdone_last])).==0) || any([istaskdone(t) for t in values(tasks)])
-			for exitchannel in values(exitchannels)
-				!isready(exitchannel) && put!(exitchannel,1)
-			end
-			return
-		end
-	yield()
-	end
-end
-
-
-function launch_channel(ljh_filename, noise_filename)
-	c = setup_channel(ljh_filename, noise_filename)
-	exitchannel = Channel{Int}(1)
-	c[:exitchannels] = Dict(1=>exitchannel)
-	c[:workdone_last] = Dict()
-	t=@task begin   while !isready(exitchannel)
-						for s in c[:steps]
-							yield()
-							time_elapsed = @elapsed workdone = workunits(dostep!(s,c))
-							workdone_cumulative = get(c[:workdone_cumulative],s,0)
-							c[:workdone_cumulative][s] = workdone_cumulative+workdone
-							time_elapsed_cumulative = get(c[:stepelapsed_cumulative],s,0)
-							c[:stepelapsed_cumulative][s] = time_elapsed_cumulative+time_elapsed	
-							c[:workdone_last][s] = workdone
-						end
-					end
-					h5open(c[:hdf5_filename],"r+") do h5
-					h5["clean_exit_posix_s"]=time()
-					end # note when/if analysis was finished without error, will be used to tag "good" hdf5 files
-			end		
-	c[:tasks] = Dict(1=>t) # only one task, it's in a dict for compatability with having a task per step
-	c[:wait_tasks] = [@schedule(try wait(t) end) for t in values(c[:tasks])] # supress printing of error messages
-	c[:endertask] = @task autoender(c,c[:tasks],c[:exitchannels])
-	c
-end
-
-function automass(masschannels, exitchannel)
+function MASS_MATTER_watcher(masschannels, exitchannel)
 	ljhname, writingbool = "",false
 	last_noise_filename = ""
 	analyzing_fname = "__"
@@ -183,9 +151,7 @@ function automass(masschannels, exitchannel)
 		if ljhname != oldljhname
 			if oldljhname == analyzing_fname # stop tasks for previous file once they've finished their work
 				info("allowing analysis tasks for $oldljhname to end")
-				for (channum, mc) in masschannels
-					schedule(mc[:endertask]) # when the ljh file name changes we wait until all work is done, then close the tasks processing the old file
-				end
+				map(plan_to_end, values(masschannels))
 				analyzing_fname=""
 			end
 			if contains(ljhname, "noise") || contains(ljhname,".noi")
@@ -201,51 +167,88 @@ function automass(masschannels, exitchannel)
 				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
-					masschannels[channums[i]] = launch_channel(ljh_filenames[i], noise_filenames[i])
-				end
-				tsetup = time()
-				info("setup $(length(channums)) channels in $(tsetup-t0) seconds")
-				for masschannel in values(masschannels)
-					schedule(masschannel[:tasks][1])
-					# dont print or do io in this loop, print gives up control to schedueler
-					# basically dont do anything else in this loop
+					masschannels[channums[i]] = setup_channel(ljh_filenames[i], noise_filenames[i])
 				end
 				tf = time()
-				info("launched $(length(channums)) channels in $(tf-tsetup) seconds")
+				info("setup $(length(channums)) channels in $(tf-t0) seconds")
+				tschedule = @elapsed map(schedule, values(masschannels))
+				info("launched $(length(channums)) channels in $tschedule seconds")
 			end
 		end
 		isready(exitchannel) && return
 	end
 end
 
-function launch_automass()
+function schedule_MASS_MATTER_watcher()
 	masschannels = Dict()
 	exitchannel = Channel{Int}(1)
-	task = @schedule automass(masschannels, exitchannel)
+	task = @schedule MASS_MATTER_watcher(masschannels, exitchannel)
 	masschannels, exitchannel, task
 end
 
-# savegraph("graph",graph(c[:steps]))
+masschannels, watcher_exitchannel, watcher_task = schedule_MASS_MATTER_watcher()
 
+@schedule begin
 getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
 if getopenfilelimit()>=1000
-	masschannels, exitchannel, task = launch_automass()
-	sleep(1)
+	sleep(2)
 	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
-	sleep(1)
+	sleep(2)
 	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes/20150730_50mM_irontris_100ps_xes.ljh",false)
-	sleep(1)
+	sleep(2)
 	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
+	sleep(2)
+	put!(watcher_exitchannel,1) 
+	@schedule begin
+		tasks = [mc[:task] for (ch, mc) in masschannels]
+		for task in tasks # wait for all tasks to finish
+			try wait(task) end # wait rethrows errors from failed tasks, we can always look at them later
+		end
+		ndone = sum([task.state==:done for task in tasks])
+		nfailed = sum([task.state==:failed for task in tasks])
+		info("all tasks done!! Yay. $ndone :done and $nfailed :failed")
+	end;
 else
 	println("open file limit is too low, try ulimit -n 1000")
 end
+end # write to MATTER sentinel file to simulate matter writing various files
 
-@schedule begin
-	tasks = [mc[:tasks][1] for (ch, mc) in masschannels]
-	for task in tasks # wait for all tasks to finish
-		try wait(task) end # wait rethrows errors from failed tasks, we can always look at them later
+
+
+# publish hists over ZMQ
+function make_coadded_hist(masschannels)
+	coadded_hist = Histogram(0:1:20000)
+	n = 0
+	for (ch,mc) in masschannels
+		if haskey(mc,:energy_hist)
+			coadded_hist+=mc[:energy_hist]
+			n+=1
+		end
 	end
-	ndone = sum([task.state==:done for task in tasks])
-	nfailed = sum([task.state==:failed for task in tasks])
-	info("all tasks done!! Yay. $ndone :done and $nfailed :failed")
-end;
+	coadded_hist,n
+end
+
+function publish_hists_zmq(masschannels, zmqexitchannel)
+	context=Context()
+	pub=Socket(context, PUB)
+	ZMQ.bind(pub, "tcp://*:5555")
+	try
+		while !isready(zmqexitchannel)
+			coadded_hist,n = make_coadded_hist(masschannels)
+			io = IOBuffer()
+			write(io,"0")
+			serialize(io, (coadded_hist,n))
+			ZMQ.send(pub, Message(io))
+			sleep(1)
+		end
+	finally
+		ZMQ.close(pub)
+		ZMQ.close(context)
+	end
+end
+
+zmqexitchannel = Channel()
+@schedule publish_hists_zmq(masschannels, zmqexitchannel)
+
+
+

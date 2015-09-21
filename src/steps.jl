@@ -43,6 +43,7 @@ end
 type MockPulsesStep <: AbstractStep
 	pg::TwoExponentialPulseGenerator{Int}
 	pulses_per_step::Int
+	max_pulses_ever::Int
 	outputs::Vector{Symbol}
 end
 type FreeMemoryStep <: AbstractStep
@@ -179,7 +180,9 @@ end
 graphlabel(s::MockPulsesStep) = "MockPulsesStep"
 inputs(s::MockPulsesStep) = []
 function dostep!(s::MockPulsesStep, c::MassChannel)
-	pulses, rowstamps = gettriggeredpulse!(s.pg,s.pulses_per_step)
+	n_pulses_to_get = min(s.pulses_per_step, s.max_pulses_ever-length(c[s.outputs[1]]))
+	n_pulses_to_get<=0 && return 0
+	pulses, rowstamps = gettriggeredpulse!(s.pg,n_pulses_to_get)
 	append!(c[s.outputs[1]], pulses)
 	append!(c[s.outputs[2]], rowstamps)
 	s.pulses_per_step
@@ -409,3 +412,54 @@ end
 workunits(x::Int) = x
 workunits(r::Range) = length(r)
 workunits(x::Bool) = convert(Int,x)
+
+
+# ## functions for repetetivley running many steps in a MassChannel
+""" Write an hdf5 dataset with name `clean_exit_posix_timestamp_s` to mc[:hdf5_filename].
+Used to indicate which channels succesfully finished analysis."""
+function markhdf5oncleanfinish(mc::MassChannel)
+	h5open(mc[:hdf5_filename],"r+") do h5
+	h5["clean_exit_posix_timestamp_s"]=time()
+	end
+end
+
+"""Continually call `dostep!(s,mc)` for `s` in `mc[:steps]`.  
+For each step measure `time_elapsed_cumulative`, `workdone_cumulative` and `workdone_last`. 
+Exits when `exitchannel` is ready (aka has a value `put!` into it), writes "clean_exit_posix_timestamp_s"
+to `mc[:hdf5_filename]` as a mark that analysis succesfuly completed. That part should probably made more general by adding a finisher function."""
+function repeatsteps!(mc::MassChannel, exitchannel)
+	while !isready(exitchannel)
+		for s in mc[:steps]
+			yield()
+			time_elapsed = @elapsed workdone = workunits(dostep!(s,mc))
+			workdone_cumulative = get(mc[:workdone_cumulative],s,0)
+			mc[:workdone_cumulative][s] = workdone_cumulative+workdone
+			time_elapsed_cumulative = get(mc[:time_elapsed_cumulative],s,0)
+			mc[:time_elapsed_cumulative][s] = time_elapsed_cumulative+time_elapsed	
+			mc[:workdone_last][s] = workdone
+		end
+	end
+	mc[:oncleanfinish](mc)
+end
+
+"""Creates `mc[:task]`, which is a task to run the steps in `mc`. Call `schedule(mc)` to schedule the task. Creates a few helper items in `mc` prefaced with underscores."""
+function make_task(mc::MassChannel)
+	mc[:_exitchannel] = Channel{Int}(1) # t ends if this channel isready (aka any value is put! into it)
+	t = @task repeatsteps!(mc)
+	mc[:task] = @task repeatsteps!(mc,mc[:_exitchannel])
+	mc[:_wait_task] = @schedule try wait(t) catch ex isa(ex, InterruptException) && throw(ex) end # suppress printing of error message
+	mc[:_endertask] = @task end_when_all_steps_do_no_work(mc[:workdone_last], mc[:_exitchannel], t)
+end
+
+"""As long as any step has nonzero `workdone_last`, yield. If all steps have zero `workdone_last` put `1` into `exitchannel`
+to cause `task` to end. Exits if `istaskdone(task)`, to account for errors in `task`. """
+function end_when_all_steps_do_no_work(workdone_last, exitchannel, task)
+	while !all(collect(values(workdone_last)).==0) && !istaskdone(task)
+		yield()
+	end
+	!isready(exitchannel) && put!(exitchannel,1)
+	return nothing
+end
+
+Base.schedule(mc::MassChannel) = schedule(mc[:task])
+plan_to_end(mc::MassChannel) = schedule(mc[:_endertask])
