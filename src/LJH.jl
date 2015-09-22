@@ -104,7 +104,11 @@ function readLJHHeader(filename::String)
 
     # Read channel # from the file name, then update that result from the header, if it exists.
     m = match(r"_chan\d+", filename)
-    channum = parse(Int16,m.match[6:end])
+    if m == nothing
+        channum = -1
+    else
+        channum = parse(Int16,m.match[6:end])
+    end
 
     while nlines<maxnlines
         line=readline(str)
@@ -156,8 +160,8 @@ end
 
 # Read the next nrec records and for each return time and samples
 # (error if eof occurs or insufficient space in data)
-function fileRecords(f::LJHFile, nrec::Integer, rows::Vector{Uint64},
-                     times::Vector{Uint64}, data::Matrix{Uint16})
+function fileRecords(f::LJHFile, nrec::Integer, rows::Vector{Int64},
+                     times::Vector{Int64}, data::Matrix{Uint16})
     #assert(nrec <= min(length(times),size(data,2)) && size(data,1)==f.nsamp)
     if f.version == :LJH_21
         for i=1:nrec
@@ -412,31 +416,31 @@ function writeLJHData(filename::String, a...)
 end
 
 # Write LJH v2.2+ data, with row # and timestamps
-function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Uint64}, times::Vector{Uint64})
+function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64}, times::Vector{Int64})
     for j = 1:length(times)
         writeLJHData(io, traces[:,j], rows[j], times[j])
     end
 end
-function writeLJHData(io::IO, trace::Vector{Uint16}, row::Uint64, time::Uint64)
+function writeLJHData(io::IO, trace::Vector{Uint16}, row::Int64, time::Int64)
     write(io, row)
-    write(it, time)
+    write(io, time)
     write(io, trace)
 end
 
 
 # Write LJH v2.1 data, with row # but no timestamps
-function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Uint64})
-    for j = 1:length(times)
+function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64})
+    for j = 1:length(rows)
         writeLJHData(io, traces[:,j], rows[j])
     end
 end
-function writeLJHData(io::IO, trace::Vector{Uint16}, row::Uint64)
-    timestamp_us = Int64(round(row*0.32)) # made-up line rate of 320 nanoseconds per row.
-    timestamp_ms = Int32(div(timestamp_us, 1000))
-    subms_part = Int8(mod(div(timestamp_us,4), 250))
+function writeLJHData(io::IO, trace::Vector{Uint16}, row::Int64)
+    timestamp_us = round(Int32, row*0.32) # made-up line rate of 320 nanoseconds per row.
+    timestamp_ms = div(timestamp_us, 1000)
+    subms_part = round(Uint8, mod(div(timestamp_us,4), 250))
     const dummy_channum::Int8 = 0
     write(io, subms_part)
-    write(io, dummy)
+    write(io, dummy_channum)
     write(io, timestamp_ms)
     write(io, trace)
 end
