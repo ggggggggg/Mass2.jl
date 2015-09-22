@@ -17,6 +17,11 @@ isperpulse(s::Symbol) = s in perpulse_symbols
 
 abstract AbstractStep
 
+"""PerPulseStep is for things like filtering data, where a perpulse input (say the actual pulse record) is transformed to a perpulse
+output (say the filtered pulse height, aka filt_value). For scalars this is easily expressed as
+`filt_value = do_filter(filter, pulse_record)`. To express this same thing as a step you would use
+`PerPulseStep(do_filter, [:filter, :pulse_record], [:filt_value])` and be sure to add both `pulse_record` and `filt_value` to 
+`perpulse_symbols`."""
 type PerPulseStep <: AbstractStep
 	func::Function
 	inputs::Vector{Symbol}
