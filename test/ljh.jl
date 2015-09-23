@@ -39,6 +39,40 @@ for ljh in (ljh1, ljh2)
     @test ljh.nrec == N
 end
 
+# Test pop!() access
+for i = 1:3
+    d,r,t = pop!(ljh1)
+    @test d==data[:,i]
+    # The encoding of rowcount as "time" and subsequent decoding means that
+    # we can't insist @test r==rowcount[i] for LJH 2.1 files.
+    @test r >= rowcount[i] && r < rowcount[i]+30
+    @test t==timestamps[i]
+
+    d,r,t = pop!(ljh2)
+    @test d==data[:,i]
+    @test r==rowcount[i]
+    @test t==timestamps[i]
+end
+
+# Test fileRecords() access and LJHRewind()
+rvec = zeros(Int64, 3)
+tvec = zeros(Int64, 3)
+dmat = zeros(Uint16, nsamp, 3)
+LJH.fileRecords(ljh1, 3, rvec, tvec, dmat)
+@test dmat==data[:,4:6]
+@test all(rvec .>= rowcount[4:6]) && all(rvec .< rowcount[4:6]+30)
+@test tvec==timestamps[4:6]
+LJH.fileRecords(ljh2, 3, rvec, tvec, dmat)
+@test dmat==data[:,4:6]
+@test rvec==rowcount[4:6]
+@test tvec==timestamps[4:6]
+LJH.LJHRewind(ljh2)
+LJH.fileRecords(ljh2, 3, rvec, tvec, dmat)
+@test dmat==data[:,1:3]
+@test rvec==rowcount[1:3]
+@test tvec==timestamps[1:3]
+
+
 # Test data access by ljh[i] going from 1:N, then backwards,
 # then skipping data forwards and backwards.
 ranges = (1:N, N:-1:1, 1:3:N, N:-2:1)
@@ -64,7 +98,7 @@ thisrange = 3:5
 thisslice = ljh2[thisrange]
 for ((d,r,t), i) in zip(thisslice, thisrange)
     @test d==data[:,i]
-    @test r .>= rowcount[i] && r .< rowcount[i]+30
+    @test r >= rowcount[i] && r < rowcount[i]+30
     @test t== timestamps[i]
 end
 
@@ -88,6 +122,6 @@ for j=1:3N
     d,r,t = grp4[j]
     i = mod(j-1, N)+1
     @test d==data[:,i]
-    @test r .>= rowcount[i] && r .< rowcount[i]+30
+    @test r >= rowcount[i] && r < rowcount[i]+30
     @test t==timestamps[i]
 end
