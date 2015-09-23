@@ -25,7 +25,7 @@ RunningSumBitVector() = RunningSumBitVector(BitVector(0),0,0)
 RunningVector{T}(::Type{T}) = RunningVector(Array(T,0),0)
 RunningBitVector() = RunningBitVector(BitVector(0),0)
 
-
+Base.getindex(r::AbstractRunningVector, inds::Colon) = getindex(r.d, 1:endof(r))
 Base.getindex(r::AbstractRunningVector, inds) = getindex(r.d, inds-r.offset)
 Base.setindex!(r::AbstractRunningVector, v, inds) = setindex!(r.d, v, inds-r.offset)
 Base.length(r::AbstractRunningVector) = r.offset + length(r.d)

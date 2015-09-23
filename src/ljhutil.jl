@@ -1,3 +1,6 @@
+
+"""Functions for working with LJH file names and the MATTER sentinel file. Intended primarily to easily find all LJH files from the same run,
+and to enable compatiblity with Python Mass."""
 module LJHUtil
 
 function ljhsplit(ljhname::String)

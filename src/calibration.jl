@@ -140,8 +140,8 @@ function plotpeaks(edges::Range, y::Vector; fwhm=15, n=typemax(Int))
 end
 
 
-function calibrate_nofit(hist::Histogram, known_energies)
-	peak_inds = findpeaks(hist,fwhm=15, n=length(known_energies)+3) # find the largest peaks, at most 3 more than the number of known energies
+function calibrate_nofit(hist::Histogram, known_energies, n_extra=3)
+	peak_inds = findpeaks(hist,fwhm=15, n=length(known_energies)+n_extra) # find the largest peaks, at most 3 more than the number of known energies
 	# with a 15 unit gaussian applied for smoothing... this needs to be adjustable
 	# also we need to check if calibration works, and if not return a failed calibration object with debug info
 	peak_x = sort(bin_centers(hist)[peak_inds])

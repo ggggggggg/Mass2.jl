@@ -11,6 +11,7 @@ r[2]=44
 @test eltype(r)==Float64
 
 rb = RunningBitVector()
+rb[:] == rb[1:end]
 append!(rb, bitrand(10))
 @test length(rb) == 10
 freeuntil!(rb,1)
@@ -32,6 +33,7 @@ rsb[100]=false
 @test available(rsb) == 51:100
 @test eltype(rsb)==Bool
 @test rsb[100]==false
+
 
 
 
