@@ -1,10 +1,11 @@
 module LJH
 
-export LJHGroup, LJHFile, update_num_records, channel, record_nsamples, pretrig_nsamples, frametime, filenames, lengths,
+export LJHGroup, LJHFile, update_num_records, channel, record_nsamples,
+        pretrig_nsamples, frametime, filenames, lengths,
         column, row, num_columns, num_rows
 
 
-# LJH file header information
+"""LJH file header information extracted from the ASCII file header."""
 immutable LJHHeader
     filename         ::String
     version          ::Symbol
@@ -21,8 +22,8 @@ immutable LJHHeader
     num_rows         ::Int16
 end
 
-# LJH file abstraction
 
+"""LJH file abstraction"""
 type LJHFile
     name             ::String        # filename
     str              ::IOStream      # IOStream to read from LJH file
@@ -39,7 +40,7 @@ type LJHFile
     num_columns      ::Int16
     num_rows         ::Int16
     function LJHFile(name::String)
-        hd = readLJHHeader(name)
+        hd = readljhheader(name)
         dt = hd.timebase
         pre = hd.nPresamples
         tot = hd.nSamples
@@ -56,6 +57,7 @@ type LJHFile
             hd.channum, hd.column, hd.row, hd.num_columns, hd.num_rows)
     end
 end
+
 function update_num_records(f::LJHFile)
     datalen = stat(f.name).size - f.header.headerSize
     f.nrec = div(datalen,f.reclength)
@@ -64,6 +66,7 @@ Base.close(f::LJHFile) = close(f.str)
 Base.open(f::LJHFile) = f.str=open(f.name)
 
 
+"""Represent a slice from an LJH file"""
 type LJHSlice{T<:AbstractArray}
     ljhfile::LJHFile
     slice::T
@@ -75,8 +78,6 @@ end
 LJHSlice{T<:AbstractArray}(ljhfile::LJHFile, slice::T) = LJHSlice{T}(ljhfile, slice)
 
 
-
-
 function Base.show(io::IO, f::LJHFile)
     print(io, "LJHFile channel $(f.channum): $(f.nrec) records with $(f.npre) presamples and $(f.nsamp) samples each\n")
     print(io, f.name*"\n")
@@ -84,8 +85,8 @@ end
 
 
 
-# Get pertinent information from LJH file header and return it as LJHHeader
-function readLJHHeader(filename::String)
+"""Get pertinent information from LJH file header and return it as an LJHHeader object."""
+function readljhheader(filename::String)
     open(filename) do str # ensures str is closed
     labels=Dict("base"   =>"Timebase:",
             "date"   =>"Date:",
@@ -161,9 +162,9 @@ end
 
 
 
-# Read the next nrec records and for each return time and samples
-# (error if eof occurs or insufficient space in data)
-function fileRecords(f::LJHFile, nrec::Integer, rows::Vector{Int64},
+"""Read the next nrec records and for each return time and samples
+(error if eof occurs or insufficient space in data)."""
+function extractljhdata(f::LJHFile, nrec::Integer, rows::Vector{Int64},
                      times::Vector{Int64}, data::Matrix{Uint16})
     #assert(nrec <= min(length(times),size(data,2)) && size(data,1)==f.nsamp)
     if f.version == :LJH_21
@@ -181,7 +182,19 @@ function fileRecords(f::LJHFile, nrec::Integer, rows::Vector{Int64},
         error("Unknown LJH version number")
     end
 end
-LJHRewind(f::LJHFile) = seek(f.str, f.header.headerSize)
+
+"""From LJH file, return all data samples as single vector (dropping the
+row counts and time stamps)."""
+function ljhalldata(filename::String)
+    ljh = LJHFile(filename)
+    [d for (d,r,t) in ljh]
+    close(ljh.str)
+    data
+end
+ljhalldata(ljh::LJHFile) = [d for (d,r,t) in ljh]
+
+"""Rewind LJHFile so that next record returned by iterating is the 1st record."""
+ljhrewind(f::LJHFile) = seek(f.str, f.header.headerSize)
 
 
 # support for ljhfile[1:7] syntax
@@ -226,18 +239,9 @@ Base.done{T}(f::LJHSlice{T}, j) = done(f.slice,j)
 Base.length{T}(f::LJHSlice{T}) = length(f.slice)
 Base.endof{T}(f::LJHSlice{T}) = length(f.slice)
 
-# From LJH file, return all data samples as single vector
-function fileData(filename::String)
-    ljh = LJHFile(filename)
-    [d for (d,r,t) in ljh]
-    close(ljh.str)
-    data
-end
 
-fileData(ljh::LJHFile) = [d for (d,r,t) in ljh]
-
-
-
+"""Represent one or more LJHFiles as a seamless sequence that can be addressed
+by record number from 1 to the sum of all records in the group."""
 type LJHGroup
     ljhfiles::Vector{LJHFile}
     lengths::Vector{Int}
@@ -351,12 +355,15 @@ end
 
 
 # writing ljh files
-function writeLJHHeader(filename::String, dt, npre, nsamp; version="2.2.0")
+
+"""Write a header for an LJH file."""
+function writeljhheader(filename::String, dt, npre, nsamp; version="2.2.0")
     open(filename, "w") do f
-    writeLJHHeader(f, dt, npre, nsamp; version=version)
+    writeljhheader(f, dt, npre, nsamp; version=version)
     end #do
 end
-function writeLJHHeader(io::IO, dt, npre, nsamp; version="2.2.0")
+
+function writeljhheader(io::IO, dt, npre, nsamp; version="2.2.0")
     write(io,
 "#LJH Memorial File Format
 Save File Format Version: $(version)
@@ -412,19 +419,21 @@ Discrimination level (%%): 1.000000
 #End of Header\n"
     )
 end
-function writeLJHData(filename::String, a...)
+
+"""Write LJH file data to an IO object or a filename given a String."""
+function writeljhdata(filename::String, a...)
     open(filename, "a") do f
-    writeLJHData(f,a...)
+    writeljhdata(f,a...)
     end
 end
 
 # Write LJH v2.2+ data, with row # and timestamps
-function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64}, times::Vector{Int64})
+function writeljhdata(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64}, times::Vector{Int64})
     for j = 1:length(times)
-        writeLJHData(io, traces[:,j], rows[j], times[j])
+        writeljhdata(io, traces[:,j], rows[j], times[j])
     end
 end
-function writeLJHData(io::IO, trace::Vector{Uint16}, row::Int64, time::Int64)
+function writeljhdata(io::IO, trace::Vector{Uint16}, row::Int64, time::Int64)
     write(io, row)
     write(io, time)
     write(io, trace)
@@ -432,12 +441,12 @@ end
 
 
 # Write LJH v2.1 data, with row # but no timestamps
-function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64})
+function writeljhdata(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64})
     for j = 1:length(rows)
-        writeLJHData(io, traces[:,j], rows[j])
+        writeljhdata(io, traces[:,j], rows[j])
     end
 end
-function writeLJHData(io::IO, trace::Vector{Uint16}, row::Int64)
+function writeljhdata(io::IO, trace::Vector{Uint16}, row::Int64)
     timestamp_us = round(Int32, row*0.32) # made-up line rate of 320 nanoseconds per row.
     timestamp_ms = Int32(div(timestamp_us, 1000))
     subms_part = round(Uint8, mod(div(timestamp_us,4), 250))

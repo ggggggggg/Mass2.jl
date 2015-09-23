@@ -11,8 +11,8 @@ dt = 9.6e-6
 npre = 200
 nsamp = 1000
 
-LJH.writeLJHHeader(f1, dt, npre, nsamp; version="2.1.0")
-LJH.writeLJHHeader(f2, dt, npre, nsamp; version="2.2.0")
+LJH.writeljhheader(f1, dt, npre, nsamp; version="2.1.0")
+LJH.writeljhheader(f2, dt, npre, nsamp; version="2.2.0")
 
 rowcount = collect(5000:1000:10000)
 timestamps = [Int64(round(r*(dt/30)*1e6)) for r in rowcount]
@@ -21,8 +21,8 @@ N = length(rowcount)
 data = rand(Uint16, nsamp, N)
 data[1,:] = 0xffff
 
-LJH.writeLJHData(f1, data, rowcount)
-LJH.writeLJHData(f2, data, rowcount, timestamps)
+LJH.writeljhdata(f1, data, rowcount)
+LJH.writeljhdata(f2, data, rowcount, timestamps)
 
 close(f1)
 close(f2)
@@ -54,20 +54,20 @@ for i = 1:3
     @test t==timestamps[i]
 end
 
-# Test fileRecords() access and LJHRewind()
+# Test extractljhdata() access and ljhrewind()
 rvec = zeros(Int64, 3)
 tvec = zeros(Int64, 3)
 dmat = zeros(Uint16, nsamp, 3)
-LJH.fileRecords(ljh1, 3, rvec, tvec, dmat)
+LJH.extractljhdata(ljh1, 3, rvec, tvec, dmat)
 @test dmat==data[:,4:6]
 @test all(rvec .>= rowcount[4:6]) && all(rvec .< rowcount[4:6]+30)
 @test tvec==timestamps[4:6]
-LJH.fileRecords(ljh2, 3, rvec, tvec, dmat)
+LJH.extractljhdata(ljh2, 3, rvec, tvec, dmat)
 @test dmat==data[:,4:6]
 @test rvec==rowcount[4:6]
 @test tvec==timestamps[4:6]
-LJH.LJHRewind(ljh2)
-LJH.fileRecords(ljh2, 3, rvec, tvec, dmat)
+LJH.ljhrewind(ljh2)
+LJH.extractljhdata(ljh2, 3, rvec, tvec, dmat)
 @test dmat==data[:,1:3]
 @test rvec==rowcount[1:3]
 @test tvec==timestamps[1:3]
