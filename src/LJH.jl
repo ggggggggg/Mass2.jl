@@ -13,7 +13,7 @@ immutable LJHHeader
     timebase         ::Float64
     timestampOffset  ::Float64
     date             ::String
-    headerSize       ::Int64
+    headerSize       ::Int
     channum          ::Int16
     column           ::Int16
     row              ::Int16
@@ -45,7 +45,10 @@ type LJHFile
         tot = hd.nSamples
         str = open(name)
         datalen = stat(name).size - hd.headerSize
-        reclen = 2*(3+tot)
+        reclen = 2*tot + 6
+        if hd.version == :LJH_22
+            reclen = 2*tot + 16
+        end
         # assert((datalen%reclen)==0)
         nrec = div(datalen,reclen)
         seek(str,hd.headerSize)
@@ -182,7 +185,7 @@ LJHRewind(f::LJHFile) = seek(f.str, f.header.headerSize)
 
 
 # support for ljhfile[1:7] syntax
-seekto(f::LJHFile, i::Int) = seek(f.str,f.header.headerSize+(i-1)*(2*f.nsamp+6))
+seekto(f::LJHFile, i::Int) = seek(f.str,f.header.headerSize+(i-1)*f.reclength)
 Base.getindex(f::LJHFile,indexes::AbstractVector)=LJHSlice(f, indexes)
 function Base.getindex(f::LJHFile,index::Int)
     seekto(f, index)
@@ -226,12 +229,12 @@ Base.endof{T}(f::LJHSlice{T}) = length(f.slice)
 # From LJH file, return all data samples as single vector
 function fileData(filename::String)
     ljh = LJHFile(filename)
-    [d for (d,t) in ljh]
+    [d for (d,r,t) in ljh]
     close(ljh.str)
     data
 end
 
-fileData(ljh::LJHFile) = [d for (d,t) in ljh]
+fileData(ljh::LJHFile) = [d for (d,r,t) in ljh]
 
 
 
@@ -328,15 +331,15 @@ and fractional parts of the millisecond. The latter are stored in bytes
 totally different.
 """
 function record_row_count_v21(header::Vector{Uint8}, num_rows::Integer, row::Integer, frame_time::Float64)
-    frac = UInt64(header[1])
+    frac = Int64(header[1])
     ms = UInt64(header[3]) |
          (UInt64(header[4])<<8) |
          (UInt64(header[5])<<16) |
          (UInt64(header[6])<<24)
-    count_4usec = UInt64(ms*250+frac)
-    ns_per_frame = round(UInt64,frame_time*1e9)
-    ns_per_4sec = UInt64(4000)
-    count_nsec = count_4usec*ns_per_4sec
+    count_4usec = Int64(ms*250+frac)
+    ns_per_frame = round(Int64,frame_time*1e9)
+    ns_per_4usec = Int64(4000)
+    count_nsec = count_4usec*ns_per_4usec
     count_frame = cld(count_nsec,ns_per_frame)
     if row == -1 # stupid workaround for the fact that -1 ruins the row calculation
         row = 0
@@ -348,12 +351,12 @@ end
 
 
 # writing ljh files
-function writeLJHHeader(filename::String, dt, npre, nsamp, version="2.2.0")
+function writeLJHHeader(filename::String, dt, npre, nsamp; version="2.2.0")
     open(filename, "w") do f
-    writeLJHHeader(f, dt, npre, nsamp, version)
+    writeLJHHeader(f, dt, npre, nsamp; version=version)
     end #do
 end
-function writeLJHHeader(io::IO, dt, npre, nsamp, version="2.2.0")
+function writeLJHHeader(io::IO, dt, npre, nsamp; version="2.2.0")
     write(io,
 "#LJH Memorial File Format
 Save File Format Version: $(version)
@@ -436,9 +439,9 @@ function writeLJHData(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64})
 end
 function writeLJHData(io::IO, trace::Vector{Uint16}, row::Int64)
     timestamp_us = round(Int32, row*0.32) # made-up line rate of 320 nanoseconds per row.
-    timestamp_ms = div(timestamp_us, 1000)
+    timestamp_ms = Int32(div(timestamp_us, 1000))
     subms_part = round(Uint8, mod(div(timestamp_us,4), 250))
-    const dummy_channum::Int8 = 0
+    dummy_channum = Int8(0)
     write(io, subms_part)
     write(io, dummy_channum)
     write(io, timestamp_ms)
