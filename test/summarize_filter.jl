@@ -62,6 +62,34 @@ function compute_filter(average_pulse, noise_autocorr, f_3db, dt)
 	filter,vdv
 end
 
+function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pre_samples)
+	# using the noise file we will try to estimate values to use for actual cuts on pulses
+	# pretrig_rms and post_peak deriv should be fairly well estiamated by the noise file
+	ljh = LJH.LJHGroup(fname)
+	traces=[p for (p,t) in ljh[1:end]]
+	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, 
+		peak_index, peak_value, min_value=compute_summary(traces,pre_samples,LJH.frametime(ljh))
+
+
+	# the distribution of pretrig_rms should follow a chisq distributions if the points are independent (IID) and have gaussian noise
+	# but the chisq distribution for 256 degrees of freedom looks a lot like a gaussian, so we're just going to stick with the
+	# gaussian approximation for now, plus a backup measure that says at most cut 1 % of pulses 
+	n_std = 10
+	pretrig_rms_max = max(median(pretrig_rms)+n_std*std(pretrig_rms), StatsBase.percentile(pretrig_rms,99))
+	pretrig_rms_min = max(0, median(pretrig_rms)-n_std*std(pretrig_rms))
+
+
+	postpeak_deriv_max = max(median(postpeak_deriv)+n_std*std(postpeak_deriv), StatsBase.percentile(postpeak_deriv,99))
+	postpeak_deriv_min = median(postpeak_deriv)-n_std*std(postpeak_deriv)
+	(pretrig_rms_min, pretrig_rms_max), (postpeak_deriv_min, postpeak_deriv_max)
+end
+
+function estimate_rise_time_criteria(rise_time)
+	mad = mean(abs(rise_time-median(rise_time)))
+	med = median(rise_time)
+	(med-10*mad, med+10*mad)
+end
+
 push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy)
@@ -92,9 +120,9 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:pre_samples] = LJH.pretrig_nsamples(ljh)
 	mc[:samples_per_record] = LJH.record_nsamples(ljh)
 	mc[:frame_time] = LJH.frametime(ljh)
-	mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
-	mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
-	mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
+	#mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
+	#mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
+	#mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
 	mc[:f_3db] = 10000
 	mc[:known_energies] = [6403.84, 7057.98] # FeKAlpha and FeKBeta
 
@@ -115,10 +143,12 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount], 0,100))
 	push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
-	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :rise_time, :rise_time_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
+	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
 	push!(steps, ThresholdStep(compute_average_pulse, [:pulse, :selection_good], [:average_pulse], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frame_time], [:filter, :vdv], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true))
+	push!(steps, ThresholdStep(estimate_pretrig_rms_and_postpeak_deriv_criteria,[:noise_filename, :pre_samples],[:pretrig_rms_criteria, :postpeak_deriv_criteria], :pulse, length, 100, true))
+	push!(steps, ThresholdStep(estimate_rise_time_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true)) 	
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
