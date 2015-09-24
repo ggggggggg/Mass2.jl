@@ -15,7 +15,7 @@ rowcount = collect(5000:1000:10000)
 timestamps = [Int64(round(r*(dt/30)*1e6)) for r in rowcount]
 N = length(rowcount)
 
-data = rand(Uint16, nsamp, N)
+data = rand(UInt16, nsamp, N)
 data[1,:] = 0xffff
 
 LJH.writeljhdata(f1, data, rowcount)
@@ -54,7 +54,7 @@ end
 # Test extractljhdata() access and ljhrewind()
 rvec = zeros(Int64, 3)
 tvec = zeros(Int64, 3)
-dmat = zeros(Uint16, nsamp, 3)
+dmat = zeros(UInt16, nsamp, 3)
 LJH.extractljhdata(ljh1, 3, rvec, tvec, dmat)
 @test dmat==data[:,4:6]
 @test all(rvec .>= rowcount[4:6]) && all(rvec .< rowcount[4:6]+30)

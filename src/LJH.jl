@@ -166,18 +166,18 @@ end
 """Read the next nrec records and for each return time and samples
 (error if eof occurs or insufficient space in data)."""
 function extractljhdata(f::LJHFile, nrec::Integer, rows::Vector{Int64},
-                     times::Vector{Int64}, data::Matrix{Uint16})
+                     times::Vector{Int64}, data::Matrix{UInt16})
     #assert(nrec <= min(length(times),size(data,2)) && size(data,1)==f.nsamp)
     if f.version == :LJH_21
         for i=1:nrec
-            rows[i], times[i] = record_row_count_v21(read(f.str, Uint8, 6), f.num_rows, f.row, f.dt)
-            data[:,i] = read(f.str, Uint16, f.nsamp)
+            rows[i], times[i] = record_row_count_v21(read(f.str, UInt8, 6), f.num_rows, f.row, f.dt)
+            data[:,i] = read(f.str, UInt16, f.nsamp)
         end
     elseif f.version == :LJH_22
         for i=1:nrec
             rows[i] = read(f.str, Int64)
             times[i] = read(f.str, Int64)
-            data[:,i] = read(f.str, Uint16, f.nsamp)
+            data[:,i] = read(f.str, UInt16, f.nsamp)
         end
     else
         error("Unknown LJH version number")
@@ -207,12 +207,12 @@ function Base.getindex(f::LJHFile,index::Int)
 end
 function Base.pop!(f::LJHFile)
     if f.version == :LJH_21
-        row_count, time_usec =  record_row_count_v21(read(f.str, Uint8, 6), f.num_rows, f.row, f.dt)
+        row_count, time_usec =  record_row_count_v21(read(f.str, UInt8, 6), f.num_rows, f.row, f.dt)
     elseif f.version == :LJH_22
         row_count = read(f.str, Int64)
         time_usec = read(f.str, Int64)
     end
-    data = read(f.str, Uint16, f.nsamp)
+    data = read(f.str, UInt16, f.nsamp)
     data, row_count, time_usec
 end
 
@@ -318,7 +318,7 @@ function Base.done{T<:UnitRange}(g::LJHGroupSlice{T}, state)
     filenum>donefilenum || filenum==donefilenum && pulsenum>donepulsenum
 end
 function Base.collect{T<:UnitRange}(g::LJHGroupSlice{T})
-    pulses = Array(Vector{Uint16}, length(g.slice))
+    pulses = Array(Vector{UInt16}, length(g.slice))
     rowstamps = Array(Int, length(g.slice))
     for (i,(pulse, rowstamp)) in enumerate(g)
         pulses[i]=pulse
@@ -335,7 +335,7 @@ and fractional parts of the millisecond. The latter are stored in bytes
 0 for backward compatibility). Ugly! That's why LJH 2.2.0 does something
 totally different.
 """
-function record_row_count_v21(header::Vector{Uint8}, num_rows::Integer, row::Integer, frame_time::Float64)
+function record_row_count_v21(header::Vector{UInt8}, num_rows::Integer, row::Integer, frame_time::Float64)
     frac = Int64(header[1])
     ms = UInt64(header[3]) |
          (UInt64(header[4])<<8) |
@@ -429,12 +429,12 @@ function writeljhdata(filename::AbstractString, a...)
 end
 
 # Write LJH v2.2+ data, with row # and timestamps
-function writeljhdata(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64}, times::Vector{Int64})
+function writeljhdata(io::IO,traces::Array{UInt16,2}, rows::Vector{Int64}, times::Vector{Int64})
     for j = 1:length(times)
         writeljhdata(io, traces[:,j], rows[j], times[j])
     end
 end
-function writeljhdata(io::IO, trace::Vector{Uint16}, row::Int64, time::Int64)
+function writeljhdata(io::IO, trace::Vector{UInt16}, row::Int64, time::Int64)
     write(io, row)
     write(io, time)
     write(io, trace)
@@ -442,15 +442,15 @@ end
 
 
 # Write LJH v2.1 data, with row # but no timestamps
-function writeljhdata(io::IO,traces::Array{Uint16,2}, rows::Vector{Int64})
+function writeljhdata(io::IO,traces::Array{UInt16,2}, rows::Vector{Int64})
     for j = 1:length(rows)
         writeljhdata(io, traces[:,j], rows[j])
     end
 end
-function writeljhdata(io::IO, trace::Vector{Uint16}, row::Int64)
+function writeljhdata(io::IO, trace::Vector{UInt16}, row::Int64)
     timestamp_us = round(Int32, row*0.32) # made-up line rate of 320 nanoseconds per row.
     timestamp_ms = Int32(div(timestamp_us, 1000))
-    subms_part = round(Uint8, mod(div(timestamp_us,4), 250))
+    subms_part = round(UInt8, mod(div(timestamp_us,4), 250))
     dummy_channum = Int8(0)
     write(io, subms_part)
     write(io, dummy_channum)
