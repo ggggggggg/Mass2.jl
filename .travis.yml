@@ -4,9 +4,17 @@ os:
   - linux
 julia:
   - 0.4
-before_install:
-  - sudo apt-get install python-numpy python-scipy python-matplotlib libpcre3-dev gfortran -y # this may not be neccesary
-  - dpkg --get-selections | grep -v deinstall # list installed packages
+addons:
+  apt:
+    packages:
+    - python-numpy
+    - python-scipy
+    - python-matplotlib
+    - libpcre3-dev
+    - gfortran
+# before_install:
+#   - sudo apt-get install python-numpy python-scipy python-matplotlib libpcre3-dev gfortran -y # this may not be neccesary
+#   - dpkg --get-selections | grep -v deinstall # list installed packages
 notifications:
   email: false
 # uncomment the following lines to override the default test script
