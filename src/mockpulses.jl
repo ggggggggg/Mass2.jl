@@ -26,6 +26,10 @@ end
 TupacLikeTwoExponentialPulseGenerator{T}(::Type{T},distribution) = TwoExponentialPulseGenerator{T}(520, 100, 50, 200, 5, 13.5,
 	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -0.0001)
 
+"Generate samples of a noiseless record made up of one or more two exponential pulses. The number of samples is `points`, 
+the rising time constant as a number of points is roughly `rise_points`, the falling time constant in number of points is roughly 
+`fall points`. The next two parameters are tuples of the same length, `arrival_point` and `amplitude` where the first value in each 
+applies to the first pulse, further values of each (if they exist) add additional pulses to the record."
 function two_exponential_pulses(
 	points::Int, rise_points, fall_points,quiescent_value, arrival_point::Tuple, amplitude::Tuple)
 	pulse = Array(Float64, points)
