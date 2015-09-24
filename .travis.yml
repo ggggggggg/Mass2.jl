@@ -1,3 +1,4 @@
+sudo: false # run on travis's container based infrastructure
 language: julia
 os:
   - linux
