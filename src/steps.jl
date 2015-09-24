@@ -290,7 +290,7 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	n_written # return workunits info
 end #dostep!
 
-default_vertex_attrs = AttributeDict()
+default_vertex_attrs = Graphs.AttributeDict()
 default_vertex_attrs["fontsize"]=18.0
 default_vertex_attrs["color"]="red"
 default_vertex_attrs["fillcolor"]="lightgrey"
