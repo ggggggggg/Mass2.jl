@@ -8,4 +8,6 @@ include("calibration.jl")
 include("histogram.jl")
 include("corrections.jl")
 include("ljh.jl")
+include("tes_optimal_filtering.jl")
 #include("ljh_calibronium.jl")
+

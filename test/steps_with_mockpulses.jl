@@ -32,7 +32,6 @@ function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby 
 end
 
 function calc_dc(indicator, uncorrected, selection_good)
-	println("inside calc_dc")
 	σ_smooth = 1.0
 	drift_correct(indicator[:][selection_good], uncorrected[:][selection_good], σ_smooth)
 end

@@ -2,6 +2,26 @@ using Mass2
 import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
 using ZMQ
+using LsqFit
+function two_exponential_pulse_for_fittng(x,p)
+	# check for bad values of rise_point and fall_points
+	# return vector record containing points at the quiesence value
+	if p[1]<0 || p[2]<0 || p[1]==p[2]
+		return zeros(Float64,length(x))
+	end
+	two_exponential_pulses(length(x), p[1], p[2],p[3], (p[4],), (p[5],))
+end
+function fit_pulse_two_exponential(pulse, pretrig_nsamples, frametime)
+	pguess = zeros(Float64,5)
+	pguess[1] = length(pulse)/10 # rise points
+	pguess[2] = 3*pguess[1] # fall points
+	pguess[3] = pulse[1] # quiescent_value
+	pguess[4] = pretrig_nsamples # arrival time (really should be based on ljh)
+	pguess[5] = maximum(pulse)-pulse[1] # amplitude
+	fit = curve_fit(two_exponential_pulse_for_fittng, collect(1:length(pulse)), pulse, pguess)
+	rise_tau_s, fall_tau_s = fit.param[1]*frametime, fit.param[2]*frametime
+end
+
 
 "selectfromcriteria(x...)
 selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and 
@@ -62,6 +82,34 @@ function compute_filter(average_pulse, noise_autocorr, f_3db, dt)
 	filter,vdv
 end
 
+function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pretrig_nsamples)
+	# using the noise file we will try to estimate values to use for actual cuts on pulses
+	# pretrig_rms and post_peak deriv should be fairly well estiamated by the noise file
+	ljh = LJH.LJHGroup(fname)
+	traces=[p for (p,t) in ljh[1:end]]
+	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, 
+		peak_index, peak_value, min_value=compute_summary(traces,pretrig_nsamples,LJH.frametime(ljh))
+
+
+	# the distribution of pretrig_rms should follow a chisq distributions if the points are independent (IID) and have gaussian noise
+	# but the chisq distribution for 256 degrees of freedom looks a lot like a gaussian, so we're just going to stick with the
+	# gaussian approximation for now, plus a backup measure that says at most cut 1 % of pulses 
+	n_std = 10
+	pretrig_rms_max = max(median(pretrig_rms)+n_std*std(pretrig_rms), StatsBase.percentile(pretrig_rms,99))
+	pretrig_rms_min = max(0, median(pretrig_rms)-n_std*std(pretrig_rms))
+
+
+	postpeak_deriv_max = max(median(postpeak_deriv)+n_std*std(postpeak_deriv), StatsBase.percentile(postpeak_deriv,99))
+	postpeak_deriv_min = median(postpeak_deriv)-n_std*std(postpeak_deriv)
+	(pretrig_rms_min, pretrig_rms_max), (postpeak_deriv_min, postpeak_deriv_max)
+end
+
+function estimate_peak_index_criteria(peak_index)
+	mad = mean(abs(peak_index-median(peak_index)))
+	med = median(peak_index)
+	(med-10*mad, med+10*mad)
+end
+
 push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy)
@@ -89,12 +137,12 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:energy_hist] = Histogram(0:1:20000)
 	mc[:pulse] = RunningVector(Vector{UInt16})
 	mc[:rowcount] = RunningVector(Int)
-	mc[:pre_samples] = LJH.pretrig_nsamples(ljh)
+	mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
 	mc[:samples_per_record] = LJH.record_nsamples(ljh)
-	mc[:frame_time] = LJH.frametime(ljh)
-	mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
-	mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
-	mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
+	mc[:frametime] = LJH.frametime(ljh)
+	#mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
+	#mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
+	#mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
 	mc[:f_3db] = 10000
 	mc[:known_energies] = [6403.84, 7057.98] # FeKAlpha and FeKBeta
 
@@ -113,12 +161,15 @@ function setup_channel(ljh_filename, noise_filename)
 
 	steps = AbstractStep[]
 	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount], 0,100))
-	push!(steps, PerPulseStep(compute_summary, [:pulse, :pre_samples, :frame_time],
+	push!(steps, PerPulseStep(compute_summary, [:pulse, :pretrig_nsamples, :frametime],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
-	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :rise_time, :rise_time_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
+	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
 	push!(steps, ThresholdStep(compute_average_pulse, [:pulse, :selection_good], [:average_pulse], :selection_good, sum, 100, true))
-	push!(steps, ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frame_time], [:filter, :vdv], :selection_good, sum, 100, true))
+	push!(steps, ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frametime], [:filter, :vdv], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true))
+	push!(steps, ThresholdStep(estimate_pretrig_rms_and_postpeak_deriv_criteria,[:noise_filename, :pretrig_nsamples],[:pretrig_rms_criteria, :postpeak_deriv_criteria], :pulse, length, 100, true))
+	push!(steps, ThresholdStep(estimate_peak_index_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true)) 	
+	push!(steps, ThresholdStep(fit_pulse_two_exponential,[:average_pulse, :pretrig_nsamples, :frametime], [:rise_tau_s, :fall_tau_s], :filt_value, length, 10, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
@@ -126,13 +177,13 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index, 
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
-	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frame_time=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse", 
+	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse", 
 	:average_pulse=>"average_pulse",
-	:samples_per_record=>"samples_per_record", :frame_time=>"frametime", :pre_samples=>"pre_samples",
+	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
-	push!(steps, FreeMemoryStep(graph(steps)))
-	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
+	#push!(steps, FreeMemoryStep(graph(steps)))
+	#push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	mc[:steps]=steps
 
