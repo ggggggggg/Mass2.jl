@@ -19,13 +19,13 @@ type TwoExponentialPulseGenerator{T<:Real} <: PulseGenerator
 	last_timestamp::Int
     trigger_points_std::Float64 # std of where it triggers relative to actualy arrival time in points (aka frames)
     d_amp_d_quiescent::Float64 # pretrigger mean/amplitude correlation
-    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,trigger_points_std,d_amp_d_quiescent)
+    function TwoExponentialPulseGenerator(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,last_timestamp,trigger_points_std,d_amp_d_quiescent)
     	rise_points<fall_points || error("rise_points should be less than fall points")
-    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,trigger_points_std,d_amp_d_quiescent)
+    	new(record_length,pre_rise_points,rise_points,fall_points,noise_fwhm,event_rate_hz,samples_per_second,min_points_since_last_pulse,amplitude_distribution,numrows,rownumber,quiescent_average,quiescent_modulation_period_points,quiescent_modulation_amplitude,last_rowstamp,last_timestamp,trigger_points_std,d_amp_d_quiescent)
     end
 end
 TupacLikeTwoExponentialPulseGenerator{T}(::Type{T},distribution) = TwoExponentialPulseGenerator{T}(520, 100, 50, 200, 5, 13.5,
-	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0, 0.5, -0.0001)
+	104166.6, 520, distribution, 30, 0, 1000, 100_000*3600, 50, 0,0, 0.5, -0.0001)
 
 "Generate samples of a noiseless record made up of one or more two exponential pulses. The number of samples is `points`, 
 the rising time constant as a number of points is roughly `rise_points`, the falling time constant in number of points is roughly 
