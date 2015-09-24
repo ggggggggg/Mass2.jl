@@ -1,3 +1,4 @@
+"LJH is a module for working with LJH files. Unless you have good reason, you should probably use `LJHGroup` most of the time."
 module LJH
 
 export LJHGroup, LJHFile, update_num_records, channel, record_nsamples,
@@ -7,13 +8,13 @@ export LJHGroup, LJHFile, update_num_records, channel, record_nsamples,
 
 """LJH file header information extracted from the ASCII file header."""
 immutable LJHHeader
-    filename         ::String
+    filename         ::AbstractString
     version          ::Symbol
     nPresamples      ::Int64
     nSamples         ::Int64
     timebase         ::Float64
     timestampOffset  ::Float64
-    date             ::String
+    date             ::AbstractString
     headerSize       ::Int
     channum          ::Int16
     column           ::Int16
@@ -25,7 +26,7 @@ end
 
 """LJH file abstraction"""
 type LJHFile
-    name             ::String        # filename
+    name             ::AbstractString        # filename
     str              ::IOStream      # IOStream to read from LJH file
     header           ::LJHHeader     # LJH file header data
     version          ::Symbol
@@ -39,7 +40,7 @@ type LJHFile
     row              ::Int16
     num_columns      ::Int16
     num_rows         ::Int16
-    function LJHFile(name::String)
+    function LJHFile(name::AbstractString)
         hd = readljhheader(name)
         dt = hd.timebase
         pre = hd.nPresamples
@@ -86,7 +87,7 @@ end
 
 
 """Get pertinent information from LJH file header and return it as an LJHHeader object."""
-function readljhheader(filename::String)
+function readljhheader(filename::AbstractString)
     open(filename) do str # ensures str is closed
     labels=Dict("base"   =>"Timebase:",
             "date"   =>"Date:",
@@ -185,7 +186,7 @@ end
 
 """From LJH file, return all data samples as single vector (dropping the
 row counts and time stamps)."""
-function ljhalldata(filename::String)
+function ljhalldata(filename::AbstractString)
     ljh = LJHFile(filename)
     [d for (d,r,t) in ljh]
     close(ljh.str)
@@ -249,7 +250,7 @@ end
 LJHGroup(x::Vector{LJHFile}) = LJHGroup(x, Int[length(f) for f in x])
 LJHGroup(x) = LJHGroup([LJHFile(f) for f in x])
 LJHGroup(x::LJHFile) = LJHGroup([x])
-LJHGroup(x::String) = LJHGroup(LJHFile(x))
+LJHGroup(x::AbstractString) = LJHGroup(LJHFile(x))
 Base.length(g::LJHGroup) = sum(g.lengths)
 Base.close(g::LJHGroup) = map(close, g.ljhfiles)
 Base.open(g::LJHGroup) = map(open, g.ljhfiles)
@@ -357,7 +358,7 @@ end
 # writing ljh files
 
 """Write a header for an LJH file."""
-function writeljhheader(filename::String, dt, npre, nsamp; version="2.2.0")
+function writeljhheader(filename::AbstractString, dt, npre, nsamp; version="2.2.0")
     open(filename, "w") do f
     writeljhheader(f, dt, npre, nsamp; version=version)
     end #do
@@ -420,8 +421,8 @@ Discrimination level (%%): 1.000000
     )
 end
 
-"""Write LJH file data to an IO object or a filename given a String."""
-function writeljhdata(filename::String, a...)
+"""Write LJH file data to an IO object or a filename given a AbstractString."""
+function writeljhdata(filename::AbstractString, a...)
     open(filename, "a") do f
     writeljhdata(f,a...)
     end

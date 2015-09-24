@@ -1,11 +1,8 @@
 using Base.Test
-include("../src/LJH.jl")
-
+using LJH
 # Write file 1 as an LJH 2.1 file and files 2 as LJH 2.2 with identical data.
-
 name1, f1 = mktemp()
 name2, f2 = mktemp()
-@show name1 name2
 
 dt = 9.6e-6
 npre = 200
