@@ -3,10 +3,10 @@ os:
   - linux
   - osx
 julia:
-  - release
+  - 0.4
 #  - nightly
 before_install:
-  - sudo apt-get install python-numpy python-scipy libpcre3-dev gfortran -y
+  - sudo apt-get install python-numpy python-scipy libpcre3-dev gfortran -y # this may not be neccesary
   - dpkg --get-selections | grep -v deinstall # list installed packages
 notifications:
   email: false

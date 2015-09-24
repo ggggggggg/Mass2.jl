@@ -449,11 +449,10 @@ end
 
 """Creates `mc[:task]`, which is a task to run the steps in `mc`. Call `schedule(mc)` to schedule the task. Creates a few helper items in `mc` prefaced with underscores."""
 function make_task(mc::MassChannel)
-	mc[:_exitchannel] = Channel{Int}(1) # t ends if this channel isready (aka any value is put! into it)
-	t = @task repeatsteps!(mc)
+	mc[:_exitchannel] = Channel{Int}(1) # repeatsteps! ends if this channel isready (aka any value is put! into it)
 	mc[:task] = @task repeatsteps!(mc,mc[:_exitchannel])
-	mc[:_wait_task] = @schedule try wait(t) catch ex isa(ex, InterruptException) && throw(ex) end # suppress printing of error message
-	mc[:_endertask] = @task end_when_all_steps_do_no_work(mc[:workdone_last], mc[:_exitchannel], t)
+	mc[:_waittask] = @schedule try wait(mc[:task]) catch ex isa(ex, InterruptException) && throw(ex) end # suppress printing of error message
+	mc[:_endertask] = @task end_when_all_steps_do_no_work(mc[:workdone_last], mc[:_exitchannel], mc[:task])
 end
 
 """As long as any step has nonzero `workdone_last`, yield. If all steps have zero `workdone_last` put `1` into `exitchannel`
