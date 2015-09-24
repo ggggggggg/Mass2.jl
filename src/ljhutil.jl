@@ -3,7 +3,7 @@
 and to enable compatiblity with Python Mass."""
 module LJHUtil
 
-function ljhsplit(ljhname::String)
+function ljhsplit(ljhname::AbstractString)
     if isdir(ljhname)
         dname = ljhname
         bname = last(split(dname,'/'))
@@ -13,33 +13,33 @@ function ljhsplit(ljhname::String)
     m = match(r"_chan\d+", bname)
     dirname(ljhname), m == nothing ? bname : bname[1:m.offset-1]
 end
-function ljhchannel(ljhname::String)
+function ljhchannel(ljhname::AbstractString)
     m = match(r"_chan(\d+)", ljhname)
     m == nothing ? -1 : parse(Int,m.captures[1])
 end
-function ljhfnames(ljhname::String, chans)
+function ljhfnames(ljhname::AbstractString, chans)
     dname, bname = ljhsplit(ljhname)
     [joinpath(dname, "$(bname)_chan$c.ljh") for c in chans]
 end
-function ljhfnames(ljhname::String, c::Int)
+function ljhfnames(ljhname::AbstractString, c::Int)
     dname, bname = ljhsplit(ljhname)
     joinpath(dname, "$(bname)_chan$c.ljh") 
 end
-function ljhallchannels(ljhname::String)
+function ljhallchannels(ljhname::AbstractString)
     dname, bname = ljhsplit(ljhname)
     potential_ljh = filter!(s->(startswith(s,bname)), readdir(dname))   
     channels = filter!(x->x>=0,[ljhchannel(p) for p in filter!(s->startswith(s,bname),readdir(dname))])
     sort!(unique(channels))
 end
-ljhall(ljhname::String) = ljhfnames(ljhname, ljhallchannels(ljhname))
-function hdf5_name_from_ljh(ljhnames::String...)
+ljhall(ljhname::AbstractString) = ljhfnames(ljhname, ljhallchannels(ljhname))
+function hdf5_name_from_ljh(ljhnames::AbstractString...)
 	dname, bname = ljhsplit(ljhnames[1])
 	fname = prod([ljhsplit(f)[2] for f in ljhnames])
 	joinpath(dname,hdf5_name_from_ljh(fname))
 end
-hdf5_name_from_ljh(ljhname::String) = joinpath(ljhsplit(ljhname)...)*"_mass.hdf5"
+hdf5_name_from_ljh(ljhname::AbstractString) = joinpath(ljhsplit(ljhname)...)*"_mass.hdf5"
 
-# returns (String, Bool) representing (filename, currently_open?)
+# returns (AbstractString, Bool) representing (filename, currently_open?)
 const sentinel_file_path = joinpath(expanduser("~"),".daq","latest_ljh_pulse.cur")
 function matter_writing_status()
     isfile(sentinel_file_path) || error("$(sentinel_file_path) must be a file")

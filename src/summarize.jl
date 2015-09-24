@@ -6,11 +6,11 @@ type PulseSummaries
     pulse_average     ::Vector{Float64}
     pulse_rms         ::Vector{Float64}
     rise_time         ::Vector{Float64}
-    postpeak_deriv    ::Vector{Float64}#todo
+    postpeak_deriv    ::Vector{Float64}
     timestamp         ::Vector{Float64}
-    peak_index        ::Vector{Uint16}
-    peak_value        ::Vector{Uint16}
-    min_value         ::Vector{Uint16}
+    peak_index        ::Vector{UInt16}
+    peak_value        ::Vector{UInt16}
+    min_value         ::Vector{UInt16}
 
 
     function PulseSummaries(n::Integer)
@@ -21,9 +21,9 @@ type PulseSummaries
         rise_time = Array(Float64, n)
         postpeak_deriv = Array(Float64, n)
         timestamp = Array(Float64, n)
-        peak_index = Array(Uint16, n)
-        peak_value = Array(Uint16, n)
-        min_value = Array(Uint16, n)
+        peak_index = Array(UInt16, n)
+        peak_value = Array(UInt16, n)
+        min_value = Array(UInt16, n)
 
         new(pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time,
             postpeak_deriv, timestamp, peak_index, peak_value, min_value)
@@ -40,9 +40,9 @@ function compute_summary(pulseiterator, Npre, frame_time)
         s = s2 = 0
         min_idx = 0
         peak_idx = 0
-        peak_val = Uint16(0)
+        peak_val = UInt16(0)
         min_idx = 0
-        min_val = typemax(Uint16)
+        min_val = typemax(UInt16)
         for j = 1:Npre
             d=Int(data[j])
             if d > peak_val 
@@ -88,9 +88,9 @@ function compute_summary(pulseiterator, Npre, frame_time)
         if ptm < 0
             summary.peak_value[p] = peak_val
         elseif peak_val > ptm
-            summary.peak_value[p] = peak_val - round(Uint16,ptm)
+            summary.peak_value[p] = peak_val - round(UInt16,ptm)
         else
-            summary.peak_value[p] = Uint16(0)
+            summary.peak_value[p] = UInt16(0)
         end
     end
     (summary.pretrig_mean, summary.pretrig_rms, summary.pulse_average, summary.pulse_rms, summary.rise_time, summary.postpeak_deriv, 
