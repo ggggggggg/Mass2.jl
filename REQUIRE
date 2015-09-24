@@ -2,6 +2,7 @@ julia 0.4
 Dierckx
 PyCall
 HDF5
+JLD
 Graphs
 ArrayViews
 Distributions
