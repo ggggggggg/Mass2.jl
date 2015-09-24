@@ -43,7 +43,7 @@ function readcontinuous(ljh,maxnpoints=50_000_000)
 	nsamp = LJH.record_nsamples(ljh)
 	maxnpoints = nsamp*div(maxnpoints, nsamp)
 	npoints = min(maxnpoints, nsamp*length(ljh))
-	data = zeros(Uint16,npoints)
+	data = zeros(UInt16,npoints)
 	for (i,(p,t)) in enumerate(ljh[1:div(npoints, nsamp)])
 		data[1+(i-1)*nsamp:i*nsamp] = p
 	end
@@ -54,7 +54,7 @@ end
 computer noise autorcorrelation of length namp from an ljh file of name ljh_filename"
 function compute_noise_autocorr(ljh_filename, nsamp)
 	data = readcontinuous(LJH.LJHGroup(ljh_filename))
-	autocorrelation(data, nsamp, 600) # final argument is max_excursion
+	autocorrelation(data, nsamp, 1000) # final argument is max_excursion
 	# this needs a revamp to reject fewer noise records and also return delta_f
 end
 
@@ -126,9 +126,9 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:pulse_rms] = RunningVector(Float32)
 	mc[:rise_time] = RunningVector(Float32)
 	mc[:postpeak_deriv] = RunningVector(Float32)
-	mc[:peak_index] = RunningVector(Uint16)
-	mc[:peak_value] = RunningVector(Uint16)
-	mc[:min_value] = RunningVector(Uint16)
+	mc[:peak_index] = RunningVector(UInt16)
+	mc[:peak_value] = RunningVector(UInt16)
+	mc[:min_value] = RunningVector(UInt16)
 	mc[:filt_value] = RunningVector(Float32)
 	mc[:filt_phase] = RunningVector(Float32)
 	mc[:energy] = RunningVector(Float32)
@@ -214,7 +214,7 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 				info("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
 				channums = LJHUtil.ljhallchannels(ljhname)
-				channums = channums[1:min(1, length(channums))]
+				channums = channums[1:min(240, length(channums))]
 				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
