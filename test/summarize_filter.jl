@@ -214,7 +214,7 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 				info("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
 				channums = LJHUtil.ljhallchannels(ljhname)
-				channums = channums[1:min(240, length(channums))]
+				channums = channums[1:min(1, length(channums))]
 				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
