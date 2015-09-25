@@ -3,13 +3,14 @@
 and be able to access them as if they were one continuous LJH file.
 `ljh[1]` returns the first `LJHRecord`. `LJHRecord` has 3 fields `data`, `rowcount`, `timestamp_usec`. If you want all of the pulse data
 but no rowcount or timestamp information do do `[r.data for r in ljh]`. If you want just a few pulse records do `collect(ljh[5:10])`.
+Alternativley you can use `get_data_rowcount_timestamp` and `get_data_rowcount_timestamp!`.
 Use `record_nsamples`, `pretrig_nsamples`, `frametime`, `filenames`, `lengths`, `column`, `row`, `num_columns`, `num_rows` to access
 additional information about the LJH file. If you really need to get access to extra information in the header you can access
 `ljh.ljhsfiles[1].headerdict`. 
 `LJH.writeljhheader` and `LJH.writeljhdata` can be used to write LJH files."
 module LJH
 
-export LJHGroup, channel, record_nsamples, pretrig_nsamples, frametime, filenames, lengths, column, row, num_columns, num_rows
+export LJHGroup, channel, record_nsamples, pretrig_nsamples, frametime, filenames, lengths, column, row, num_columns, num_rows, get_data_rowcount_timestamp
 
 function ljh_get_header_dict(io::IO)
     headerdict = Dict()
@@ -251,6 +252,37 @@ function Base.done{T<:UnitRange}(g::LJHGroupSlice{T}, state)
     filenum, recordnum, donefilenum, donerecordnum = state
     filenum>donefilenum || filenum==donefilenum && recordnum>donerecordnum
 end
+
+
+"Get all data from an `LJHGroupSlice`, returned as a tuple of Vectors `(data, rowcount, timestamp_usec)`."
+function get_data_rowcount_timestamp(g::LJHGroupSlice)
+    data = Array(Vector{Uint16},length(g))
+    rowcount = zeros(Int64, length(g))
+    timestamp_usec = zeros(Int64, length(g))
+    get_data_rowcount_timestamp!(g,data,rowcount,timestamp_usec)
+end
+"get_data_rowcount_timestamp!(g,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+Get all data from an `LJHGroupSlice`, pass in vectors of length `length(g)` and correct type to be filled with the answers."
+function get_data_rowcount_timestamp!(g,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+    state = start(g)
+    i=0
+    @assert length(data)==length(rowcount)==length(timestamp_usec)==length(g) "data, rowcount, timestap_usec: length mismatch: lengths $((length(data), length(rowcount), length(timestamp_usec), length(g)))"
+    while !done(g, state)
+        i+=1
+        record, state = next(g,state)
+        data[i] = record.data
+        rowcount[i] = record.rowcount
+        timestamp_usec[i] = record.timestamp_usec
+    end
+    @assert i==length(g) "iterated $i times, should have been $(length(g))"
+    data,rowcount,timestamp_usec
+end
+"Get all data from an `LJHGroup`, returned as a tuple of Vectors `(data, rowcount, timestamp_usec)`."
+get_data_rowcount_timestamp(g::LJHGroup) = get_data_rowcount_timestamp(g[1:end])
+function get_data_rowcount_timestamp!(g::LJHGroup,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+    get_data_rowcount_timestamp!(g[1:end],data,rowcount, timestamp_usec)
+end
+
 
 
 """Write a header for an LJH file."""
