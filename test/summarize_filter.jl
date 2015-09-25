@@ -3,6 +3,8 @@ import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
 using ZMQ
 using LsqFit
+using Base.Test
+
 function two_exponential_pulse_for_fittng(x,p)
 	# check for bad values of rise_point and fall_points
 	# return vector record containing points at the quiesence value
@@ -117,8 +119,6 @@ push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 
 function setup_channel(ljh_filename, noise_filename)
 	ljh = LJHGroup(ljh_filename)
-
-
 
 	mc=MassChannel()
 	mc[:pretrig_mean] = RunningVector(Float32)
@@ -241,15 +241,17 @@ end
 
 masschannels, watcher_exitchannel, watcher_task = schedule_MASS_MATTER_watcher()
 
+rmf = ReferenceMicrocalFiles.dict["tupac_fe_emission"]
+
 t = @schedule begin
 getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
 if getopenfilelimit()>=1000
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes/20150730_50mM_irontris_100ps_xes.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.filename,false)
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
 	put!(watcher_exitchannel,1) 
 	@schedule begin
@@ -269,5 +271,8 @@ end # write to MATTER sentinel file to simulate matter writing various files
 
 wait(t)
 mc=masschannels[1];
+
+wait(mc[:task])
+@assert mc[:task].state == :done
 
 
