@@ -1,5 +1,6 @@
 using Base.Test
 
+srand(87687634)
 @test length(pow2edges(0.1,1:100))==1025
 @test isapprox(first(pow2edges(0.1,1:100)),1)
 @test isapprox(last(pow2edges(0.1,1:100)),100)
