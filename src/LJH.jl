@@ -71,8 +71,8 @@ function LJHFile(fname::AbstractString,io::IO)
         parse(Int16,headerdict["Presamples"]), # pretrig_nsamples
         parse(Int16,headerdict["Total Samples"]), # record_nsamples
         round(Int16,parse(Float64,headerdict["Channel"])), # channel number
-        parse(Int16,get(headerdict,"Column number (from 0-$(num_columns-1) inclusive)","0")),   #column
-        parse(Int16,get(headerdict,"Row number (from 0-$(num_rows-1) inclusive)","0")), #row
+        parse(Int16,get(headerdict,"Column number (from 0-$(num_columns-1) inclusive)","0")),   #column, defaults to zero if not in file
+        parse(Int16,get(headerdict,"Row number (from 0-$(num_rows-1) inclusive)","0")), #row, defaults to zero if not in file
         num_columns, # num_columns
         num_rows) # num_rows
 end
