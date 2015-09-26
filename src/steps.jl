@@ -254,11 +254,11 @@ function d_extend(d::HDF5Dataset, value::Vector, range::UnitRange)
 	d
 end
 d_extend(d::JldDataset, value::Vector, range::UnitRange) = d_extend(d.plain, value, range)
-function d_require(parent::Union(JldFile,JldGroup), name, elementype::Type ,chunksize = 1000)
+function d_require(parent::Union{JldFile,JldGroup}, name, elementype::Type ,chunksize = 1000)
 	dims = ((1,), (-1,)) # create a minimum size 1d dataset with largest possible maximum dimension, zero is not allowed
 	exists(parent,name) ? parent[name] : d_create(parent.plain, name, elementype, dims, "chunk", (chunksize,))
 end
-function update!(parent::Union(JldFile,JldGroup), name, value)
+function update!(parent::Union{JldFile,JldGroup}, name, value)
 	exists(parent, name) && delete!(parent[name])
 	parent[name]=value
 end
