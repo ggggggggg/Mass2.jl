@@ -9,3 +9,5 @@ Distributions
 KernelDensity
 PyPlot
 Requires
+ZMQ
+LsqFit

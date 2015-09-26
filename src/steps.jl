@@ -219,12 +219,12 @@ inputs(s::GetPulsesStep) = Symbol[]
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
-	pulses, rowstamps, timestamps = collect(s.pulse_source[r])
-	pulses_out, rowstamps_out, timestamps_out = perpulse_outputs(s,c)
+	pulses, rowcounts, timestamps = get_data_rowcount_timestamp(s.pulse_source[r])
+	pulses_out, rowcounts_out, timestamps_out = perpulse_outputs(s,c)
 	append!(pulses_out, pulses)
 	assert(length(pulses_out)==last(r))
-	append!(rowstamps_out, rowstamps)
-	assert(length(rowstamps_out)==last(r))
+	append!(rowcounts_out, rowcounts)
+	assert(length(rowcounts_out)==last(r))
 	append!(timestamps_out, timestamps)
 	assert(length(timestamps_out)==last(r))
 	s.previous_pulse_index=last(r)
@@ -254,11 +254,11 @@ function d_extend(d::HDF5Dataset, value::Vector, range::UnitRange)
 	d
 end
 d_extend(d::JldDataset, value::Vector, range::UnitRange) = d_extend(d.plain, value, range)
-function d_require(parent::Union(JldFile,JldGroup), name, elementype::Type ,chunksize = 1000)
+function d_require(parent::Union{JldFile,JldGroup}, name, elementype::Type ,chunksize = 1000)
 	dims = ((1,), (-1,)) # create a minimum size 1d dataset with largest possible maximum dimension, zero is not allowed
 	exists(parent,name) ? parent[name] : d_create(parent.plain, name, elementype, dims, "chunk", (chunksize,))
 end
-function update!(parent::Union(JldFile,JldGroup), name, value)
+function update!(parent::Union{JldFile,JldGroup}, name, value)
 	exists(parent, name) && delete!(parent[name])
 	parent[name]=value
 end
