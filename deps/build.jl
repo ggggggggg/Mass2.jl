@@ -4,3 +4,5 @@
 if !isdir(Pkg.dir("ReferenceMicrocalFiles"))
 	Pkg.clone("https://github.com/ggggggggg/ReferenceMicrocalFiles.jl")
 end
+isdir(expanduser("~/.daq")) || mkdir(expanduser("~/.daq"))
+isfile(expanduser("~/.daq/latest_ljh_pulse.cur")) || touch(expanduser("~/.daq/latest_ljh_pulse.cur"))
