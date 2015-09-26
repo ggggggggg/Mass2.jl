@@ -26,7 +26,7 @@ end
 
 
 "selectfromcriteria(x...)
-selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and 
+selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and
 returns a bitvector that is true if all indictors pass criteria[1] .< indicator .< criteria[2]"
 function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby a bit slow
 	iseven(length(x)) || error("x must be indicator,criteria,indicator,criteria...")
@@ -39,7 +39,7 @@ function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby 
 end
 
 "readcontinuous(ljh,maxnpoints=50_000_000)
-read from an LJH file, return pulses concatonated together to form a continuour vector 
+read from an LJH file, return pulses concatonated together to form a continuour vector
 reads either the whole file, or until maxnpoints"
 function readcontinuous(ljh,maxnpoints=50_000_000)
 	nsamp = record_nsamples(ljh)
@@ -62,7 +62,7 @@ end
 
 "compute_average_pulse(pulse, selection_good)
 compute the average (mean) the good pulses in pulse. good determined by bitvector selection_good"
-function compute_average_pulse(pulse, selection_good) 
+function compute_average_pulse(pulse, selection_good)
 	sumpulse = zeros(Int64, length(pulse[1]))
 	n=0
 	for i=1:length(selection_good) # take the mean of the pulses in a way that avoids int overflows
@@ -90,13 +90,13 @@ function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pretrig_nsample
 	ljh = LJHGroup(fname)
 
 	traces=[r.data for r in ljh[1:end]]
-	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, 
+	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv,
 		peak_index, peak_value, min_value=compute_summary(traces,pretrig_nsamples,frametime(ljh))
 
 
 	# the distribution of pretrig_rms should follow a chisq distributions if the points are independent (IID) and have gaussian noise
 	# but the chisq distribution for 256 degrees of freedom looks a lot like a gaussian, so we're just going to stick with the
-	# gaussian approximation for now, plus a backup measure that says at most cut 1 % of pulses 
+	# gaussian approximation for now, plus a backup measure that says at most cut 1 % of pulses
 	n_std = 10
 	pretrig_rms_max = max(median(pretrig_rms)+n_std*std(pretrig_rms), StatsBase.percentile(pretrig_rms,99))
 	pretrig_rms_min = max(0, median(pretrig_rms)-n_std*std(pretrig_rms))
@@ -113,8 +113,9 @@ function estimate_peak_index_criteria(peak_index)
 	(med-10*mad, med+10*mad)
 end
 
+empty!(perpulse_symbols) # this probably shouldn't be a global
 push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
-	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
+	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
 
 function setup_channel(ljh_filename, noise_filename)
@@ -151,7 +152,7 @@ function setup_channel(ljh_filename, noise_filename)
 	#metadata
 	mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
 	mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
-	mc[:workdone_last] = Dict{AbstractStep, Int64}() 
+	mc[:workdone_last] = Dict{AbstractStep, Int64}()
 	mc[:calibration_nextra] = 0 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
 	mc[:noise_filename]=noise_filename
@@ -170,16 +171,16 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frametime], [:filter, :vdv], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true))
 	push!(steps, ThresholdStep(estimate_pretrig_rms_and_postpeak_deriv_criteria,[:noise_filename, :pretrig_nsamples],[:pretrig_rms_criteria, :postpeak_deriv_criteria], :pulse, length, 100, true))
-	push!(steps, ThresholdStep(estimate_peak_index_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true)) 	
+	push!(steps, ThresholdStep(estimate_peak_index_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true))
 	push!(steps, ThresholdStep(fit_pulse_two_exponential,[:average_pulse, :pretrig_nsamples, :frametime], [:rise_tau_s, :fall_tau_s], :filt_value, length, 10, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
 	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
-	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index, 
+	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
-	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse", 
+	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
@@ -245,7 +246,7 @@ rmf = ReferenceMicrocalFiles.dict["tupac_fe_emission"]
 
 t = @schedule begin
 getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
-if getopenfilelimit()>=1000
+#if getopenfilelimit()>=1000
 	sleep(2)
 	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
@@ -253,7 +254,7 @@ if getopenfilelimit()>=1000
 	sleep(2)
 	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
-	put!(watcher_exitchannel,1) 
+	put!(watcher_exitchannel,1)
 	@schedule begin
 		tasks = [mc[:task] for (ch, mc) in masschannels]
 		for task in tasks # wait for all tasks to finish
@@ -263,9 +264,9 @@ if getopenfilelimit()>=1000
 		nfailed = sum([task.state==:failed for task in tasks])
 		info("all tasks done!! Yay. $ndone :done and $nfailed :failed")
 	end;
-else
-	println("open file limit is too low, try ulimit -n 1000")
-end
+#else
+#	println("open file limit is too low, try ulimit -n 1000")
+#end
 end # write to MATTER sentinel file to simulate matter writing various files
 
 
@@ -274,5 +275,3 @@ mc=masschannels[1];
 
 wait(mc[:task])
 @assert mc[:task].state == :done
-
-
