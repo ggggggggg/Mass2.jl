@@ -23,7 +23,6 @@ LJH.writeljhdata(f2, data, rowcount, timestamps)
 
 close(f1)
 close(f2)
-
 # Now check that the data are readable
 ljh21 = LJHGroup(name21)
 ljh22 = LJHGroup(name22)
@@ -80,4 +79,4 @@ for i = 1:N
   @assert data[:,1]==data_r[1]
 end
 @assert rowcount_r==rowcount
-@assert timestamp_user_r == timestamps
+@assert timestamp_usec_r == timestamps
