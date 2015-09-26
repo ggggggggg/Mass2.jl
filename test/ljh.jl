@@ -1,8 +1,8 @@
 using Base.Test
 using LJH
 # Write file 1 as an LJH 2.1 file and files 2 as LJH 2.2 with identical data.
-name1, f1 = mktemp()
-name2, f2 = mktemp()
+name21, f1 = mktemp()
+name22, f2 = mktemp()
 
 dt = 9.6e-6
 npre = 200
@@ -23,102 +23,60 @@ LJH.writeljhdata(f2, data, rowcount, timestamps)
 
 close(f1)
 close(f2)
-
 # Now check that the data are readable
-ljh1 = LJH.LJHFile(name1)
-ljh2 = LJH.LJHFile(name2)
-
+ljh21 = LJHGroup(name21)
+ljh22 = LJHGroup(name22)
 # Test that the header info is correct
-for ljh in (ljh1, ljh2)
-    @test ljh.nsamp == nsamp
-    @test ljh.npre == npre
-    @test ljh.dt == dt
-    @test ljh.nrec == N
-end
+for ljh in (ljh21, ljh22)
+    @test record_nsamples(ljh) == nsamp
+    @test pretrig_nsamples(ljh) == npre
+    @test frametime(ljh) == dt
+    @test length(ljh) == N
 
-# Test pop!() access
-for i = 1:3
-    d,r,t = pop!(ljh1)
-    @test d==data[:,i]
-    # The encoding of rowcount as "time" and subsequent decoding means that
-    # we can't insist @test r==rowcount[i] for LJH 2.1 files.
-    @test r >= rowcount[i] && r < rowcount[i]+30
-    @test t==timestamps[i]
-
-    d,r,t = pop!(ljh2)
-    @test d==data[:,i]
-    @test r==rowcount[i]
-    @test t==timestamps[i]
-end
-
-# Test extractljhdata() access and ljhrewind()
-rvec = zeros(Int64, 3)
-tvec = zeros(Int64, 3)
-dmat = zeros(UInt16, nsamp, 3)
-LJH.extractljhdata(ljh1, 3, rvec, tvec, dmat)
-@test dmat==data[:,4:6]
-@test all(rvec .>= rowcount[4:6]) && all(rvec .< rowcount[4:6]+30)
-@test tvec==timestamps[4:6]
-LJH.extractljhdata(ljh2, 3, rvec, tvec, dmat)
-@test dmat==data[:,4:6]
-@test rvec==rowcount[4:6]
-@test tvec==timestamps[4:6]
-LJH.ljhrewind(ljh2)
-LJH.extractljhdata(ljh2, 3, rvec, tvec, dmat)
-@test dmat==data[:,1:3]
-@test rvec==rowcount[1:3]
-@test tvec==timestamps[1:3]
-
-
-# Test data access by ljh[i] going from 1:N, then backwards,
-# then skipping data forwards and backwards.
-ranges = (1:N, N:-1:1, 1:3:N, N:-2:1)
-for thisrange in ranges
-    for i=1:N
-        d,r,t = ljh1[i]
-        @test d==data[:,i]
-        # The encoding of rowcount as "time" and subsequent decoding means that
-        # we can't insist @test r==rowcount[i] for LJH 2.1 files.
-        @test r >= rowcount[i] && r < rowcount[i]+30
-        @test t==timestamps[i]
-
-        d,r,t = ljh2[i]
-        @test d==data[:,i]
-        @test r==rowcount[i]
-        @test t==timestamps[i]
+    # Test indexed access
+    ranges = (1:N, N:-1:1, 1:3:N, N:-2:1)
+    for r in ranges
+        for i = r
+            record = ljh[i]
+            @test record.data==data[:,i]
+            @test record.timestamp_usec==timestamps[i]
+        end
     end
-end
+    row(ljh)
+    column(ljh)
+    num_rows(ljh)
+    num_columns(ljh)
 
-# Grab a slice from both LJHFile and LJHGroup
-@assert N>5
-thisrange = 3:5
-thisslice = ljh2[thisrange]
-for ((d,r,t), i) in zip(thisslice, thisrange)
-    @test d==data[:,i]
-    @test r >= rowcount[i] && r < rowcount[i]+30
-    @test t== timestamps[i]
-end
-
-# Be sure to test LJHGroup capability for stringing multiple files together.
-# First, groups corresponding to one file
-grp1 = LJH.LJHGroup(ljh2)
-grp2 = LJH.LJHGroup(name2)
-grp3 = LJH.LJHGroup([ljh2])
-for g in (grp1, grp2, grp3)
-    for i=1:N
-        d,r,t = g[i]
-        @test d==data[:,i]
-        @test r==rowcount[i]
-        @test t==timestamps[i]
+    # test slices
+    for (r1,r2) in zip(collect(ljh[2:4]), collect(ljh)[2:4])
+        @test r1.data==r2.data
     end
 end
 
 # Now a group corresponding to 3 files (actually, same one 3 times)
-grp4 = LJH.LJHGroup([name2, name1, name2])
+grp = LJHGroup([name22, name21, name22])
 for j=1:3N
-    d,r,t = grp4[j]
+    record = grp[j]
+    d,r,t = record.data, record.rowcount, record.timestamp_usec
     i = mod(j-1, N)+1
     @test d==data[:,i]
-    @test r >= rowcount[i] && r < rowcount[i]+30
     @test t==timestamps[i]
 end
+
+
+for (r1,r2) in zip(collect(grp[3:10]), collect(grp)[3:10])
+    @test r1.data == r2.data
+    @test r1.rowcount == r2.rowcount
+    @test r1.timestamp_usec == r2.timestamp_usec
+end
+@test lengths(grp) == [N,N,N]
+
+grp.ljhfiles[1].record_nsamples=0
+@test_throws AssertionError record_nsamples(grp)
+
+data_r, rowcount_r, timestamp_usec_r = get_data_rowcount_timestamp(ljh22)
+for i = 1:N
+  @assert data[:,1]==data_r[1]
+end
+@assert rowcount_r==rowcount
+@assert timestamp_usec_r == timestamps

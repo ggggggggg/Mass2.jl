@@ -3,6 +3,8 @@ import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
 using ZMQ
 using LsqFit
+using Base.Test
+
 function two_exponential_pulse_for_fittng(x,p)
 	# check for bad values of rise_point and fall_points
 	# return vector record containing points at the quiesence value
@@ -40,12 +42,12 @@ end
 read from an LJH file, return pulses concatonated together to form a continuour vector 
 reads either the whole file, or until maxnpoints"
 function readcontinuous(ljh,maxnpoints=50_000_000)
-	nsamp = LJH.record_nsamples(ljh)
+	nsamp = record_nsamples(ljh)
 	maxnpoints = nsamp*div(maxnpoints, nsamp)
 	npoints = min(maxnpoints, nsamp*length(ljh))
 	data = zeros(UInt16,npoints)
-	for (i,(p,t)) in enumerate(ljh[1:div(npoints, nsamp)])
-		data[1+(i-1)*nsamp:i*nsamp] = p
+	for (i,r) in enumerate(ljh[1:div(npoints, nsamp)])
+		data[1+(i-1)*nsamp:i*nsamp] = r.data
 	end
 	data
 end
@@ -53,7 +55,7 @@ end
 "compute_noise_autocorr(ljh_filename, nsamp)
 computer noise autorcorrelation of length namp from an ljh file of name ljh_filename"
 function compute_noise_autocorr(ljh_filename, nsamp)
-	data = readcontinuous(LJH.LJHGroup(ljh_filename))
+	data = readcontinuous(LJHGroup(ljh_filename))
 	autocorrelation(data, nsamp, 1000) # final argument is max_excursion
 	# this needs a revamp to reject fewer noise records and also return delta_f
 end
@@ -85,10 +87,11 @@ end
 function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pretrig_nsamples)
 	# using the noise file we will try to estimate values to use for actual cuts on pulses
 	# pretrig_rms and post_peak deriv should be fairly well estiamated by the noise file
-	ljh = LJH.LJHGroup(fname)
-	traces=[p for (p,t) in ljh[1:end]]
+	ljh = LJHGroup(fname)
+
+	traces=[r.data for r in ljh[1:end]]
 	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, 
-		peak_index, peak_value, min_value=compute_summary(traces,pretrig_nsamples,LJH.frametime(ljh))
+		peak_index, peak_value, min_value=compute_summary(traces,pretrig_nsamples,frametime(ljh))
 
 
 	# the distribution of pretrig_rms should follow a chisq distributions if the points are independent (IID) and have gaussian noise
@@ -112,12 +115,10 @@ end
 
 push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
-	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy)
+	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
 
 function setup_channel(ljh_filename, noise_filename)
 	ljh = LJHGroup(ljh_filename)
-
-
 
 	mc=MassChannel()
 	mc[:pretrig_mean] = RunningVector(Float32)
@@ -137,6 +138,7 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:energy_hist] = Histogram(0:1:20000)
 	mc[:pulse] = RunningVector(Vector{UInt16})
 	mc[:rowcount] = RunningVector(Int)
+	mc[:timestamp_posix_usec] = RunningVector(Int)
 	mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
 	mc[:samples_per_record] = LJH.record_nsamples(ljh)
 	mc[:frametime] = LJH.frametime(ljh)
@@ -160,7 +162,7 @@ function setup_channel(ljh_filename, noise_filename)
 	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
 	steps = AbstractStep[]
-	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount], 0,100))
+	push!(steps, GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100))
 	push!(steps, PerPulseStep(compute_summary, [:pulse, :pretrig_nsamples, :frametime],
 	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]))
 	push!(steps, PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]))
@@ -182,8 +184,8 @@ function setup_channel(ljh_filename, noise_filename)
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
-	#push!(steps, FreeMemoryStep(graph(steps)))
-	#push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
+	push!(steps, FreeMemoryStep(graph(steps)))
+	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	mc[:steps]=steps
 
@@ -214,7 +216,7 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 				info("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
 				channums = LJHUtil.ljhallchannels(ljhname)
-				channums = channums[1:min(240, length(channums))]
+				channums = channums[1:min(1, length(channums))]
 				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
@@ -239,15 +241,17 @@ end
 
 masschannels, watcher_exitchannel, watcher_task = schedule_MASS_MATTER_watcher()
 
-@schedule begin
+rmf = ReferenceMicrocalFiles.dict["tupac_fe_emission"]
+
+t = @schedule begin
 getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
 if getopenfilelimit()>=1000
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes/20150730_50mM_irontris_100ps_xes.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.filename,false)
 	sleep(2)
-	LJHUtil.write_sentinel_file("/Volumes/Drobo/exafs_data/20150730_50mM_irontris_100ps_xes_noise/20150730_50mM_irontris_100ps_xes_noise.ljh",false)
+	LJHUtil.write_sentinel_file(rmf.noise_filename,false)
 	sleep(2)
 	put!(watcher_exitchannel,1) 
 	@schedule begin
@@ -265,41 +269,10 @@ end
 end # write to MATTER sentinel file to simulate matter writing various files
 
 
+wait(t)
+mc=masschannels[1];
 
-# publish hists over ZMQ
-function make_coadded_hist(masschannels)
-	coadded_hist = Histogram(0:1:20000)
-	n = 0
-	for (ch,mc) in masschannels
-		if haskey(mc,:energy_hist)
-			coadded_hist+=mc[:energy_hist]
-			n+=1
-		end
-	end
-	coadded_hist,n
-end
-
-function publish_hists_zmq(masschannels, zmqexitchannel)
-	context=Context()
-	pub=Socket(context, PUB)
-	ZMQ.bind(pub, "tcp://*:5555")
-	try
-		while !isready(zmqexitchannel)
-			coadded_hist,n = make_coadded_hist(masschannels)
-			io = IOBuffer()
-			write(io,"0")
-			serialize(io, (coadded_hist,n))
-			ZMQ.send(pub, Message(io))
-			sleep(1)
-		end
-	finally
-		ZMQ.close(pub)
-		ZMQ.close(context)
-	end
-end
-
-zmqexitchannel = Channel()
-@schedule publish_hists_zmq(masschannels, zmqexitchannel)
-
+wait(mc[:task])
+@assert mc[:task].state == :done
 
 

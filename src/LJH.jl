@@ -1,331 +1,125 @@
-"LJH is a module for working with LJH files. Unless you have good reason, you should probably use `LJHGroup` most of the time."
+"LJH is a module for working with LJH files. The intended interface is to use `LJHGroup` exclusivley, `LJHFile` is for internal use only.
+`ljh=LJHGroup(filename)` will open one file. If you instead pass a vector of filenames from the same channel, you will open all the files
+and be able to access them as if they were one continuous LJH file.
+`ljh[1]` returns the first `LJHRecord`. `LJHRecord` has 3 fields `data`, `rowcount`, `timestamp_usec`. If you want all of the pulse data
+but no rowcount or timestamp information do do `[r.data for r in ljh]`. If you want just a few pulse records do `collect(ljh[5:10])`.
+Alternativley you can use `get_data_rowcount_timestamp` and `get_data_rowcount_timestamp!`.
+Use `record_nsamples`, `pretrig_nsamples`, `frametime`, `filenames`, `lengths`, `column`, `row`, `num_columns`, `num_rows` to access
+additional information about the LJH file. If you really need to get access to extra information in the header you can access
+`ljh.ljhsfiles[1].headerdict`.
+`LJH.writeljhheader` and `LJH.writeljhdata` can be used to write LJH files."
 module LJH
 
-export LJHGroup, LJHFile, update_num_records, channel, record_nsamples,
-        pretrig_nsamples, frametime, filenames, lengths,
-        column, row, num_columns, num_rows
+export LJHGroup, channel, record_nsamples, pretrig_nsamples, frametime, filenames, lengths, column, row, num_columns, num_rows, get_data_rowcount_timestamp
 
-
-"""LJH file header information extracted from the ASCII file header."""
-immutable LJHHeader
-    filename         ::AbstractString
-    version          ::Symbol
-    nPresamples      ::Int64
-    nSamples         ::Int64
-    timebase         ::Float64
-    timestampOffset  ::Float64
-    date             ::AbstractString
-    headerSize       ::Int
-    channum          ::Int16
-    column           ::Int16
-    row              ::Int16
-    num_columns      ::Int16
-    num_rows         ::Int16
-end
-
-
-"""LJH file abstraction"""
-type LJHFile
-    name             ::AbstractString        # filename
-    str              ::IOStream      # IOStream to read from LJH file
-    header           ::LJHHeader     # LJH file header data
-    version          ::Symbol
-    nrec             ::Int64         # number of (pulse) records in file
-    dt               ::Float64       # sample spacing (microseconds)
-    npre             ::Int64         # nPresample
-    nsamp            ::Int64         # number of sample per record
-    reclength        ::Int64         # record length (bytes) including timestamp
-    channum          ::Int16         # channel number
-    column           ::Int16
-    row              ::Int16
-    num_columns      ::Int16
-    num_rows         ::Int16
-    function LJHFile(name::AbstractString)
-        hd = readljhheader(name)
-        dt = hd.timebase
-        pre = hd.nPresamples
-        tot = hd.nSamples
-        str = open(name)
-        datalen = stat(name).size - hd.headerSize
-        reclen = 2*tot + 6
-        if hd.version == :LJH_22
-            reclen = 2*tot + 16
-        end
-        # assert((datalen%reclen)==0)
-        nrec = div(datalen,reclen)
-        seek(str,hd.headerSize)
-        new(name, str, hd, hd.version, nrec, dt, pre, tot, reclen,
-            hd.channum, hd.column, hd.row, hd.num_columns, hd.num_rows)
-    end
-end
-
-function update_num_records(f::LJHFile)
-    datalen = stat(f.name).size - f.header.headerSize
-    f.nrec = div(datalen,f.reclength)
-end
-Base.close(f::LJHFile) = close(f.str)
-Base.open(f::LJHFile) = f.str=open(f.name)
-
-
-"""Represent a slice from an LJH file"""
-type LJHSlice{T<:AbstractArray}
-    ljhfile::LJHFile
-    slice::T
-    function LJHSlice(ljhfile, slice)
-        maximum(slice)<=ljhfile.nrec || error("$(maximum(slice)) is greater than nrec=$(ljhfile.nrec) in $ljhfile")
-        new(ljhfile, slice)
-    end
-end
-LJHSlice{T<:AbstractArray}(ljhfile::LJHFile, slice::T) = LJHSlice{T}(ljhfile, slice)
-
-
-function Base.show(io::IO, f::LJHFile)
-    print(io, "LJHFile channel $(f.channum): $(f.nrec) records with $(f.npre) presamples and $(f.nsamp) samples each\n")
-    print(io, f.name*"\n")
-end
-
-
-
-"""Get pertinent information from LJH file header and return it as an LJHHeader object."""
-function readljhheader(filename::AbstractString)
-    open(filename) do str # ensures str is closed
-    labels=Dict("base"   =>"Timebase:",
-            "date"   =>"Date:",
-            "date1"  =>"File First Record Time:",
-            "end"    =>"#End of Header",
-            "offset" =>"Timestamp offset (s):",
-            "pre"    =>"Presamples: ",
-            "tot"    =>"Total Samples: ",
-            "version"=>"Save File Format Version: ",
-            "channum"=>"Channel: ",
-            "column"=>r"Column number .*: (\d+)",
-            "row"=>r"Row number .*: (\d+)",
-            "num_columns"=>"Number of columns:",
-            "num_rows"=>"Number of rows:")
-    nlines=0
-    maxnlines=100
-    column,row, num_columns, num_rows = -1,-1,-1,-1
-    date = "unknown" # If header standard for date labels changes, we don't want a hard error
-
-    # Read channel # from the file name, then update that result from the header, if it exists.
-    m = match(r"_chan\d+", filename)
-    if m == nothing
-        channum = -1
-    else
-        channum = parse(Int16,m.match[6:end])
-    end
-
-    while nlines<maxnlines
-        line=readline(str)
-        nlines+=1
-        if startswith(line,labels["end"])
-            headerSize = position(str)
-            return(LJHHeader(filename,version,nPresamples,nSamples,
-                             timebase,timestampOffset,date,headerSize,channum,column,row,num_columns,num_rows))
-        elseif startswith(line,labels["base"])
-            timebase = parse(Float64,line[1+length(labels["base"]):end])
-        elseif startswith(line,labels["date"]) # Old LJH files
-            date = line[7:end-2]
-        elseif startswith(line,labels["date1"])# Newer LJH files
-            date = line[25:end-2]
-        elseif startswith(line,labels["channum"])# Newer LJH files
-            channum = Int16(parse(line[10:end]))
-        elseif startswith(line,labels["offset"])
-            timestampOffset = parse(Float64,line[1+length(labels["offset"]):end])
-        elseif startswith(line,labels["pre"])
-            nPresamples = parse(Int64,line[1+length(labels["pre"]):end])
-        elseif startswith(line,labels["tot"])
-            nSamples = parse(Int64,line[1+length(labels["tot"]):end])
-        elseif startswith(line, labels["version"])
-            version_str = line[1+length(labels["version"]):end]
-            if startswith(version_str, "2.1.0")
-                version = :LJH_21
-            elseif startswith(version_str, "2.2.0")
-                version = :LJH_22
-            else
-                error("read_LJH_header: version '$(version_str)' unknown.")
-            end
-        elseif ismatch(labels["column"],line)
-            m=match(labels["column"],line)
-            column = parse(Int64,m.captures[1])
-        elseif ismatch(labels["row"],line)
-            m=match(labels["row"],line)
-            row = parse(Int64,m.captures[1])
-        elseif startswith(line, labels["num_columns"])
-            num_columns = parse(Int64,line[1+length(labels["num_columns"]):end])
-        elseif startswith(line, labels["num_rows"])
-            num_rows = parse(Int64,line[1+length(labels["num_rows"]):end])
+function ljh_get_header_dict(io::IO)
+    headerdict = Dict()
+    while true
+        line = readline(io)
+        if startswith(line, "#End of Header")
+            break
+        elseif startswith(line, "#")
+            continue
+        else
+            a,b=split(line,":")
+            headerdict[strip(a)]=strip(b)
         end
     end
-    error("read_LJH_header: where's '$(labels["end"])' ?")
-    end #do
+    headerdict
 end
 
-
-
-"""Read the next nrec records and for each return time and samples
-(error if eof occurs or insufficient space in data)."""
-function extractljhdata(f::LJHFile, nrec::Integer, rows::Vector{Int64},
-                     times::Vector{Int64}, data::Matrix{UInt16})
-    #assert(nrec <= min(length(times),size(data,2)) && size(data,1)==f.nsamp)
-    if f.version == :LJH_21
-        for i=1:nrec
-            rows[i], times[i] = record_row_count_v21(read(f.str, UInt8, 6), f.num_rows, f.row, f.dt)
-            data[:,i] = read(f.str, UInt16, f.nsamp)
-        end
-    elseif f.version == :LJH_22
-        for i=1:nrec
-            rows[i] = read(f.str, Int64)
-            times[i] = read(f.str, Int64)
-            data[:,i] = read(f.str, UInt16, f.nsamp)
-        end
-    else
-        error("Unknown LJH version number")
-    end
+type LJHFile{VersionInt, T<:IO}
+    filename             ::AbstractString   # filename
+    io               ::IO         # IO to read from LJH file
+    headerdict       ::Dict             # LJH file header data
+    datastartpos     ::Int
+    frametime        ::Float64          # sample spacing (microseconds)
+    pretrig_nsamples ::Int64            # nPresample
+    record_nsamples  ::Int64            # number of sample per record
+    channum          ::Int16            # channel number
+    column           ::Int16            # column number
+    row              ::Int16            # row number
+    num_columns      ::Int16            # number of rows
+    num_rows         ::Int16            # number of columns
+end
+immutable LJHRecord
+    data::Vector{UInt16}
+    rowcount::Int64
+    timestamp_usec::Int64
 end
 
-"""From LJH file, return all data samples as single vector (dropping the
-row counts and time stamps)."""
-function ljhalldata(filename::AbstractString)
-    ljh = LJHFile(filename)
-    [d for (d,r,t) in ljh]
-    close(ljh.str)
-    data
+@enum LJHVERSION LJH_21 LJH_22
+VERSIONS = Dict(v"2.1.0"=>LJH_21, v"2.2.0"=>LJH_22)
+
+LJHFile(fname::AbstractString) = LJHFile(fname,open(fname,"r"))
+function LJHFile(fname::AbstractString,io::IO)
+    headerdict = ljh_get_header_dict(seekstart(io))
+    datastartpos = position(io)
+    ioend = position(seekend(io))
+    version = VersionNumber(headerdict["Save File Format Version"])
+    version in keys(VERSIONS) || error("$fname has version $version, which is not in VERSIONS $VERSIONS")
+    versionint = VERSIONS[version]
+    record_nsamples = parse(Int,headerdict["Total Samples"])
+    num_rows = parse(Int16, get(headerdict,"Number of rows","0"))
+    num_columns = parse(Int16, get(headerdict,"Number of columns","0"))
+    LJHFile{versionint, typeof(io)}(
+        fname, # filename
+        io, # IO
+        headerdict, #headerdict
+        datastartpos, # datastartpos
+        parse(Float64,headerdict["Timebase"]), # frametime
+        parse(Int16,headerdict["Presamples"]), # pretrig_nsamples
+        parse(Int16,headerdict["Total Samples"]), # record_nsamples
+        round(Int16,parse(Float64,headerdict["Channel"])), # channel number
+        parse(Int16,get(headerdict,"Column number (from 0-$(num_columns-1) inclusive)","0")),   #column
+        parse(Int16,get(headerdict,"Row number (from 0-$(num_rows-1) inclusive)","0")), #row
+        num_columns, # num_columns
+        num_rows) # num_rows
 end
-ljhalldata(ljh::LJHFile) = [d for (d,r,t) in ljh]
+LJHFile(f::LJHFile) = f
 
-"""Rewind LJHFile so that next record returned by iterating is the 1st record."""
-ljhrewind(f::LJHFile) = seek(f.str, f.header.headerSize)
+"Return number of bytes per record in LJH file, based on version number"
+record_nbytes{T}(f::LJHFile{LJH_21,T}) = 6+2*f.record_nsamples
+record_nbytes{T}(f::LJHFile{LJH_22,T}) = 16+2*f.record_nsamples
 
+"ljh_number_of_records(f::LJHFile) Return the number of complete records currently available to read from `f`."
+function ljh_number_of_records(f::LJHFile)
+    oldpos = position(f.io)
+    endpos = position(seekend(f.io))
+    nbytes = endpos-f.datastartpos
+    seek(f.io,oldpos)
+    number_of_records = div(nbytes, record_nbytes(f))
+end
 
 # support for ljhfile[1:7] syntax
-seekto(f::LJHFile, i::Int) = seek(f.str,f.header.headerSize+(i-1)*f.reclength)
-Base.getindex(f::LJHFile,indexes::AbstractVector)=LJHSlice(f, indexes)
+seekto(f::LJHFile, i::Int) = seek(f.io,f.datastartpos+(i-1)*record_nbytes(f))
+Base.getindex(f::LJHFile,indexes::AbstractVector)=LJHGroupSlice(LJHGroup(f), indexes)
 function Base.getindex(f::LJHFile,index::Int)
     seekto(f, index)
     pop!(f)
 end
-function Base.pop!(f::LJHFile)
-    if f.version == :LJH_21
-        row_count, time_usec =  record_row_count_v21(read(f.str, UInt8, 6), f.num_rows, f.row, f.dt)
-    elseif f.version == :LJH_22
-        row_count = read(f.str, Int64)
-        time_usec = read(f.str, Int64)
-    end
-    data = read(f.str, UInt16, f.nsamp)
-    data, row_count, time_usec
+function Base.pop!{T}(f::LJHFile{LJH_21,T})
+    rowcount, timestamp_usec =  record_row_count_v21(read(f.io, UInt8, 6), f.num_rows, f.row, f.frametime)
+    data = read(f.io, UInt16, f.record_nsamples)
+    LJHRecord(data, rowcount, timestamp_usec)
 end
-
-Base.size(f::LJHFile) = (f.nrec,)
-Base.length(f::LJHFile) = f.nrec
-Base.endof(f::LJHFile) = f.nrec
-
+function Base.pop!{T}(f::LJHFile{LJH_22,T})
+    rowcount = read(f.io, Int64)
+    timestamp_usec = read(f.io, Int64)
+    data = read(f.io, UInt16, f.record_nsamples)
+    LJHRecord(data, rowcount, timestamp_usec)
+end
+Base.size(f::LJHFile) = (ljh_number_of_records(f),)
+Base.length(f::LJHFile) = ljh_number_of_records(f)
+Base.endof(f::LJHFile) = ljh_number_of_records(f)
 # access as iterator
 Base.start(f::LJHFile) = (seekto(f,1);1)
 Base.next(f::LJHFile,j) = pop!(f),j+1
 Base.done(f::LJHFile,j) = j==length(f)+1
-Base.length(f::LJHFile) = f.nrec
 
-
-Base.start{T}(f::LJHSlice{T}) = (j=start(f.slice);seekto(f.ljhfile,j);j)
-function Base.next{T<:UnitRange}(f::LJHSlice{T}, j)
-    n,r=next(f.slice,j)
-    pop!(f.ljhfile),r
-end
-function Base.next{T}(f::LJHSlice{T},j)
-    n,r=next(f.slice,j)
-    f.ljhfile[n],r
-end
-Base.done{T}(f::LJHSlice{T}, j) = done(f.slice,j)
-Base.length{T}(f::LJHSlice{T}) = length(f.slice)
-Base.endof{T}(f::LJHSlice{T}) = length(f.slice)
-
-
-"""Represent one or more LJHFiles as a seamless sequence that can be addressed
-by record number from 1 to the sum of all records in the group."""
-type LJHGroup
-    ljhfiles::Vector{LJHFile}
-    lengths::Vector{Int}
-end
-LJHGroup(x::Vector{LJHFile}) = LJHGroup(x, Int[length(f) for f in x])
-LJHGroup(x) = LJHGroup([LJHFile(f) for f in x])
-LJHGroup(x::LJHFile) = LJHGroup([x])
-LJHGroup(x::AbstractString) = LJHGroup(LJHFile(x))
-Base.length(g::LJHGroup) = sum(g.lengths)
-Base.close(g::LJHGroup) = map(close, g.ljhfiles)
-Base.open(g::LJHGroup) = map(open, g.ljhfiles)
-fieldvalue(g::LJHGroup, s::Symbol) = unique([getfield(f, s) for f in g.ljhfiles])
-channel(g::LJHGroup) = (assert(length(fieldvalue(g, :channum))==1);g.ljhfiles[1].channum)
-record_nsamples(g::LJHGroup) = (assert(length(fieldvalue(g, :nsamp))==1);g.ljhfiles[1].nsamp)
-pretrig_nsamples(g::LJHGroup) = (assert(length(fieldvalue(g, :npre))==1);g.ljhfiles[1].npre)
-frametime(g::LJHGroup) = (assert(length(fieldvalue(g, :dt))==1);g.ljhfiles[1].dt)
-column(g::LJHGroup) = (assert(length(fieldvalue(g, :column))==1);g.ljhfiles[1].column)
-row(g::LJHGroup) = (assert(length(fieldvalue(g, :row))==1);g.ljhfiles[1].row)
-num_columns(g::LJHGroup) = (assert(length(fieldvalue(g, :num_columns))==1);g.ljhfiles[1].num_columns)
-num_rows(g::LJHGroup) = (assert(length(fieldvalue(g, :num_rows))==1);g.ljhfiles[1].num_rows)
-filenames(g::LJHGroup) = convert(Array{ASCIIString},fieldvalue(g, :name))
-lengths(g::LJHGroup) = g.lengths
-function update_num_records(g::LJHGroup)
-    old_lengths = copy(g.lengths)
-    update_num_records(last(g.ljhfiles))
-    g.lengths = Int[length(f) for f in g.ljhfiles]
-    for i = 1:length(g.lengths)-1
-        if old_lengths[i]!=g.lengths[i]
-            error("a ljh file other than the last file in grew in length $g it was $(g.ljhfiles[i])")
-        end
-    end
-end
-function filenum_pulsenum(g::LJHGroup, j::Int)
-    for (i,len) in enumerate(g.lengths)
-        j <= len ? (return i,j) : (j-=len)
-    end
-    1,1 # default return value in case of empty range
-end
-function Base.getindex(g::LJHGroup, i::Int)
-    filenum, pulsenum = filenum_pulsenum(g,i)
-    g.ljhfiles[filenum][pulsenum]
-end
-Base.getindex(g::LJHGroup, slice::AbstractArray) = LJHGroupSlice(g, slice)
-Base.endof(g::LJHGroup) = length(g)
-immutable LJHGroupSlice{T<:AbstractArray}
-    g::LJHGroup
-    slice::T
-    function LJHGroupSlice(ljhgroup, slice)
-        isempty(slice) || maximum(slice)<=length(ljhgroup) || error("$(maximum(slice)) is greater than nrec=$(length(ljhgroup)) in $ljhgroup")
-        new(ljhgroup, slice)
-    end
-end
-Base.length(g::LJHGroupSlice) = length(g.slice)
-Base.endof(g::LJHGroupSlice) = length(g.slice)
-LJHGroupSlice{T<:AbstractArray}(ljhfile::LJHGroup, slice::T) = LJHGroupSlice{T}(ljhfile, slice)
-function Base.start{T<:UnitRange}(g::LJHGroupSlice{T})
-    for f in g.g.ljhfiles seekto(f,1) end
-    isempty(g.slice) && return (2,2,1,1) # ensure done condition is immediatley met on empty range
-    filenum, pulsenum = filenum_pulsenum(g.g, first(g.slice))
-    donefilenum, donepulsenum = filenum_pulsenum(g.g, last(g.slice))
-    seekto(g.g.ljhfiles[filenum], pulsenum)
-    return (filenum, pulsenum, donefilenum, donepulsenum)
-end
-function Base.next{T<:UnitRange}(g::LJHGroupSlice{T}, state)
-    filenum, pulsenum, donefilenum, donepulsenum = state
-    data = pop!(g.g.ljhfiles[filenum])
-    pulsenum+=1
-    pulsenum > g.g.lengths[filenum] && (pulsenum-=g.g.lengths[filenum];filenum+=1)
-    data, (filenum, pulsenum, donefilenum, donepulsenum)
-end
-function Base.done{T<:UnitRange}(g::LJHGroupSlice{T}, state)
-    filenum, pulsenum, donefilenum, donepulsenum = state
-    filenum>donefilenum || filenum==donefilenum && pulsenum>donepulsenum
-end
-function Base.collect{T<:UnitRange}(g::LJHGroupSlice{T})
-    pulses = Array(Vector{UInt16}, length(g.slice))
-    rowstamps = Array(Int, length(g.slice))
-    for (i,(pulse, rowstamp)) in enumerate(g)
-        pulses[i]=pulse
-        rowstamps[i]=rowstamp
-    end
-    pulses, rowstamps
-end
+# open and close
+Base.open(f::LJHFile) = open(f.io)
+Base.close(f::LJHFile) = close(f.io)
 
 """Used only for reading LJH version 2.1.0 files. This parses the ugly
 "encoded" version of the frame counter, which is converted into an
@@ -346,16 +140,150 @@ function record_row_count_v21(header::Vector{UInt8}, num_rows::Integer, row::Int
     ns_per_4usec = Int64(4000)
     count_nsec = count_4usec*ns_per_4usec
     count_frame = cld(count_nsec,ns_per_frame)
-    if row == -1 # stupid workaround for the fact that -1 ruins the row calculation
-        row = 0
-        num_rows = 30
+    rowcount = count_frame*num_rows+row
+    return rowcount, 4*count_4usec
+end
+
+"""Represent one or more LJHFiles as a seamless sequence that can be addressed
+by record number from 1 to the sum of all records in the group."""
+type LJHGroup
+    ljhfiles::Vector{LJHFile}
+    lengths::Vector{Int}
+end
+function LJHGroup(x::Vector)
+    ljhfiles = LJHFile[LJHFile(f) for f in x]
+    LJHGroup(ljhfiles, [length(f) for f in ljhfiles])
+end
+LJHGroup(x::LJHFile) = LJHGroup(LJHFile[x])
+LJHGroup(x::AbstractString) = LJHGroup(LJHFile(x))
+Base.length(g::LJHGroup) = sum(g.lengths)
+Base.close(g::LJHGroup) = map(close, g.ljhfiles)
+Base.open(g::LJHGroup) = map(open, g.ljhfiles)
+fieldvalue(g::LJHGroup, s::Symbol) = unique([getfield(f, s) for f in g.ljhfiles])
+channel(g::LJHGroup) = (assert(length(fieldvalue(g, :channum))==1);g.ljhfiles[1].channum)
+record_nsamples(g::LJHGroup) = (assert(length(fieldvalue(g, :record_nsamples))==1);g.ljhfiles[1].record_nsamples)
+pretrig_nsamples(g::LJHGroup) = (assert(length(fieldvalue(g, :pretrig_nsamples))==1);g.ljhfiles[1].pretrig_nsamples)
+frametime(g::LJHGroup) = (assert(length(fieldvalue(g, :frametime))==1);g.ljhfiles[1].frametime)
+column(g::LJHGroup) = (assert(length(fieldvalue(g, :column))==1);g.ljhfiles[1].column)
+row(g::LJHGroup) = (assert(length(fieldvalue(g, :row))==1);g.ljhfiles[1].row)
+num_columns(g::LJHGroup) = (assert(length(fieldvalue(g, :num_columns))==1);g.ljhfiles[1].num_columns)
+num_rows(g::LJHGroup) = (assert(length(fieldvalue(g, :num_rows))==1);g.ljhfiles[1].num_rows)
+filenames(g::LJHGroup) = [f.filename for f in g.ljhfiles]
+lengths(g::LJHGroup) = g.lengths
+"examine the underlying LJHFiles to determine if any grew. If the last one grew, update `g.lengths`, otherwise throw an error"
+function update_num_records(g::LJHGroup)
+    old_lengths = copy(g.lengths)
+    new_lengths = Int[length(f) for f in g.ljhfiles]
+    for i = 1:length(g.lengths)-1
+        if old_lengths[i]!=new_lengths[i]
+            error("a ljh file other than the last file in grew in length $g it was $(g.ljhfiles[i])")
+        end
     end
-    count_row = count_frame*num_rows+row
-    return count_row, 4*count_4usec
+    g.lengths=new_lengths
+end
+"filenum_recordnum(g::LJHGroup, j::Int) The record `g[j]` is actually `g.ljhfiles[i][k]`, return `i,k`. "
+function filenum_recordnum(g::LJHGroup, j::Int)
+    for (i,len) in enumerate(g.lengths)
+        j <= len ? (return i,j) : (j-=len)
+    end
+    1,1 # default return value in case of empty range
+end
+function Base.getindex(g::LJHGroup, i::Int)
+    filenum, recordnum = filenum_recordnum(g,i)
+    g.ljhfiles[filenum][recordnum]
+end
+Base.getindex(g::LJHGroup, slice::AbstractArray) = LJHGroupSlice(g, slice)
+Base.endof(g::LJHGroup) = length(g)
+function Base.start(g::LJHGroup)
+    for f in g.ljhfiles seekto(f,1) end
+    filenum, recordnum = filenum_recordnum(g,1)
+    donefilenum, donerecordnum = filenum_recordnum(g, length(g))
+    (filenum, recordnum, donefilenum, donerecordnum)
+end
+function Base.next(g::LJHGroup, state)
+    filenum, recordnum, donefilenum, donerecordnum = state
+    ljhrecord = pop!(g.ljhfiles[filenum])
+    recordnum+=1
+    recordnum > g.lengths[filenum] && (recordnum-=g.lengths[filenum];filenum+=1)
+    ljhrecord, (filenum, recordnum, donefilenum, donerecordnum)
+end
+function Base.done(g::LJHGroup, state)
+    filenum, recordnum, donefilenum, donerecordnum = state
+    filenum>donefilenum || filenum==donefilenum && recordnum>donerecordnum
+end
+function Base.show(io::IO, g::LJHGroup)
+    print(io, "LJHGroup with $(length(g.ljhfiles)) files, $(length(g)) records, split as $(lengths(g)),")
+    print(io, " record_nsampes $(record_nsamples(g)),\n")
+    print(io,"  pretrig_nsamples $(pretrig_nsamples(g)).")
+    print(io,"channel $(channel(g)), row $(row(g)), column $(column(g)), frametime $(frametime(g)) s.\n")
+    print("  First filename $(g.ljhfiles[1].filename)")
 end
 
 
-# writing ljh files
+
+"LJHGroupSlice is used to allow acces to ranges of LJH records, eg `[r.data for r in ljh[1:100]]`."
+immutable LJHGroupSlice{T<:AbstractArray}
+    g::LJHGroup
+    slice::T
+    function LJHGroupSlice(ljhgroup, slice)
+        isempty(slice) || maximum(slice)<=length(ljhgroup) || error("$(maximum(slice)) is greater than nrec=$(length(ljhgroup)) in $ljhgroup")
+        new(ljhgroup, slice)
+    end
+end
+Base.length(g::LJHGroupSlice) = length(g.slice)
+Base.endof(g::LJHGroupSlice) = length(g.slice)
+LJHGroupSlice{T<:AbstractArray}(ljhfile::LJHGroup, slice::T) = LJHGroupSlice{T}(ljhfile, slice)
+function Base.start{T<:UnitRange}(g::LJHGroupSlice{T})
+    for f in g.g.ljhfiles seekto(f,1) end
+    isempty(g.slice) && return (2,2,1,1) # ensure done condition is immediatley met on empty range
+    filenum, recordnum = filenum_recordnum(g.g, first(g.slice))
+    donefilenum, donerecordnum = filenum_recordnum(g.g, last(g.slice))
+    seekto(g.g.ljhfiles[filenum], recordnum)
+    (filenum, recordnum, donefilenum, donerecordnum)
+end
+function Base.next{T<:UnitRange}(g::LJHGroupSlice{T}, state)
+    filenum, recordnum, donefilenum, donerecordnum = state
+    ljhrecord = pop!(g.g.ljhfiles[filenum])
+    recordnum+=1
+    recordnum > g.g.lengths[filenum] && (recordnum-=g.g.lengths[filenum];filenum+=1)
+    ljhrecord, (filenum, recordnum, donefilenum, donerecordnum)
+end
+function Base.done{T<:UnitRange}(g::LJHGroupSlice{T}, state)
+    filenum, recordnum, donefilenum, donerecordnum = state
+    filenum>donefilenum || filenum==donefilenum && recordnum>donerecordnum
+end
+
+
+"Get all data from an `LJHGroupSlice`, returned as a tuple of Vectors `(data, rowcount, timestamp_usec)`."
+function get_data_rowcount_timestamp(g::LJHGroupSlice)
+    data = Array(Vector{UInt16},length(g))
+    rowcount = zeros(Int64, length(g))
+    timestamp_usec = zeros(Int64, length(g))
+    get_data_rowcount_timestamp!(g,data,rowcount,timestamp_usec)
+end
+"get_data_rowcount_timestamp!(g,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+Get all data from an `LJHGroupSlice`, pass in vectors of length `length(g)` and correct type to be filled with the answers."
+function get_data_rowcount_timestamp!(g,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+    state = start(g)
+    i=0
+    @assert length(data)==length(rowcount)==length(timestamp_usec)==length(g) "data, rowcount, timestap_usec: length mismatch: lengths $((length(data), length(rowcount), length(timestamp_usec), length(g)))"
+    while !done(g, state)
+        i+=1
+        record, state = next(g,state)
+        data[i] = record.data
+        rowcount[i] = record.rowcount
+        timestamp_usec[i] = record.timestamp_usec
+    end
+    @assert i==length(g) "iterated $i times, should have been $(length(g))"
+    data,rowcount,timestamp_usec
+end
+"Get all data from an `LJHGroup`, returned as a tuple of Vectors `(data, rowcount, timestamp_usec)`."
+get_data_rowcount_timestamp(g::LJHGroup) = get_data_rowcount_timestamp(g[1:end])
+function get_data_rowcount_timestamp!(g::LJHGroup,data::Vector{Vector{UInt16}},rowcount::Vector{Int64},timestamp_usec::Vector{Int64})
+    get_data_rowcount_timestamp!(g[1:end],data,rowcount, timestamp_usec)
+end
+
+
 
 """Write a header for an LJH file."""
 function writeljhheader(filename::AbstractString, dt, npre, nsamp; version="2.2.0")
@@ -458,4 +386,4 @@ function writeljhdata(io::IO, trace::Vector{UInt16}, row::Int64)
     write(io, trace)
 end
 
-end # end module
+end #module
