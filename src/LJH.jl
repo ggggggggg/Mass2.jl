@@ -1,12 +1,12 @@
 "LJH is a module for working with LJH files. The intended interface is to use `LJHGroup` exclusivley, `LJHFile` is for internal use only.
-`ljh=LJHGroup(filename)` will open one file. If you instead pass a vector of filenames from the same channel, you will open all the files 
+`ljh=LJHGroup(filename)` will open one file. If you instead pass a vector of filenames from the same channel, you will open all the files
 and be able to access them as if they were one continuous LJH file.
 `ljh[1]` returns the first `LJHRecord`. `LJHRecord` has 3 fields `data`, `rowcount`, `timestamp_usec`. If you want all of the pulse data
 but no rowcount or timestamp information do do `[r.data for r in ljh]`. If you want just a few pulse records do `collect(ljh[5:10])`.
 Alternativley you can use `get_data_rowcount_timestamp` and `get_data_rowcount_timestamp!`.
 Use `record_nsamples`, `pretrig_nsamples`, `frametime`, `filenames`, `lengths`, `column`, `row`, `num_columns`, `num_rows` to access
 additional information about the LJH file. If you really need to get access to extra information in the header you can access
-`ljh.ljhsfiles[1].headerdict`. 
+`ljh.ljhsfiles[1].headerdict`.
 `LJH.writeljhheader` and `LJH.writeljhdata` can be used to write LJH files."
 module LJH
 
@@ -98,7 +98,7 @@ function Base.getindex(f::LJHFile,index::Int)
     seekto(f, index)
     pop!(f)
 end
-function Base.pop!{T}(f::LJHFile{LJH_21,T}) 
+function Base.pop!{T}(f::LJHFile{LJH_21,T})
     rowcount, timestamp_usec =  record_row_count_v21(read(f.io, UInt8, 6), f.num_rows, f.row, f.frametime)
     data = read(f.io, UInt16, f.record_nsamples)
     LJHRecord(data, rowcount, timestamp_usec)
@@ -194,7 +194,7 @@ function Base.getindex(g::LJHGroup, i::Int)
 end
 Base.getindex(g::LJHGroup, slice::AbstractArray) = LJHGroupSlice(g, slice)
 Base.endof(g::LJHGroup) = length(g)
-function Base.start(g::LJHGroup) 
+function Base.start(g::LJHGroup)
     for f in g.ljhfiles seekto(f,1) end
     filenum, recordnum = filenum_recordnum(g,1)
     donefilenum, donerecordnum = filenum_recordnum(g, length(g))
@@ -212,7 +212,7 @@ function Base.done(g::LJHGroup, state)
     filenum>donefilenum || filenum==donefilenum && recordnum>donerecordnum
 end
 function Base.show(io::IO, g::LJHGroup)
-    print(io, "LJHGroup with $(length(g.ljhfiles)) files, $(length(g)) records, split as $(lengths(g)),") 
+    print(io, "LJHGroup with $(length(g.ljhfiles)) files, $(length(g)) records, split as $(lengths(g)),")
     print(io, " record_nsampes $(record_nsamples(g)),\n")
     print(io,"  pretrig_nsamples $(pretrig_nsamples(g)).")
     print(io,"channel $(channel(g)), row $(row(g)), column $(column(g)), frametime $(frametime(g)) s.\n")
@@ -256,7 +256,7 @@ end
 
 "Get all data from an `LJHGroupSlice`, returned as a tuple of Vectors `(data, rowcount, timestamp_usec)`."
 function get_data_rowcount_timestamp(g::LJHGroupSlice)
-    data = Array(Vector{Uint16},length(g))
+    data = Array(Vector{UInt16},length(g))
     rowcount = zeros(Int64, length(g))
     timestamp_usec = zeros(Int64, length(g))
     get_data_rowcount_timestamp!(g,data,rowcount,timestamp_usec)
