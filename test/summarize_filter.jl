@@ -67,8 +67,8 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(fit_pulse_two_exponential,[:average_pulse, :pretrig_nsamples, :frametime], [:rise_tau_s, :fall_tau_s], :filt_value, length, 10, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
-	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
-	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
+	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_dc_hist, counted, 1000, true))
+	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 3000, true))
 	push!(steps, PerPulseStep(applycorrection, [:pretrigger_mean_drift_correction_params, :pretrig_mean, :filt_value], [:filt_value_dc]))
@@ -81,7 +81,7 @@ function setup_channel(ljh_filename, noise_filename)
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
 	push!(steps, FreeMemoryStep(graph(steps)))
-	push!(steps, MemoryLimitStep(Int(10e6))) # throw error if mc uses more than 10 MB
+	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 10 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	mc[:steps]=steps
 

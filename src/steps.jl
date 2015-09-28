@@ -412,14 +412,28 @@ Return the earliest needed index for `mc[parent]`. `g` should be the graph
 in a `FreeMemoryStep`."
 function earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph)
 	v = vertex(g,string(parent))
-	children_vertices = Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) # consider memoizing this
-	shift!(children_vertices) # remove the first element, which is always v
-	children_sym = [symbol(label(u)) for u in children_vertices]
+	next_neighbor_vertices = graph_out_next_neighbors(v,g)
+	children_sym = [symbol(label(u)) for u in next_neighbor_vertices]
 	eni = [earliest_needed_index(mc,q,parent) for q in children_sym]
 	# println([(q,earliest_needed_index(c,q,parent)) for q in children_sym])
 	filter!(x->x != nothing, eni)
 	isempty(eni)?length(mc[parent])+1:minimum(eni)
 end
+
+"graph_out_next_neighbors(v,g::AbstractGraph) Find all the next nearest neighbors of vertex `v` in `g`. Used because
+in Mass2 steps graph structure, the nearest neighbors of data are usually functions, and the nearest neighbors
+of functions are data. Only data has `earliest_needed_index` defined, so we want to find the nearest
+data neighbors of data when calculating what we can free."
+function graph_out_next_neighbors(v,g::AbstractGraph)
+	# use Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) to find all dependents
+	children_vertices = Graphs.out_neighbors(v,g)
+	next_neighbor_vertices = Any[]
+	for vv in children_vertices
+		next_neighbor_vertices=vcat(next_neighbor_vertices, collect(Graphs.out_neighbors(vv,g)))
+	end
+	next_neighbor_vertices
+end
+
 
 
 # for work reporting
