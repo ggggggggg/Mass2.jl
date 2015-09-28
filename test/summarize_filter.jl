@@ -70,8 +70,8 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
 	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
-	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:ptm_dc],:filt_value_hist, counted, 3000, true))
-	push!(steps, PerPulseStep(applycorrection, [:ptm_dc, :pretrig_mean, :filt_value], [:filt_value_dc]))
+	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 3000, true))
+	push!(steps, PerPulseStep(applycorrection, [:pretrigger_mean_drift_correction_params, :pretrig_mean, :filt_value], [:filt_value_dc]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
 	push!(steps, ToJLDStep([:filt_value, :filt_value_dc, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
