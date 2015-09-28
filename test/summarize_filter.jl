@@ -1,120 +1,10 @@
 using Mass2
-import TESOptimalFiltering: filter5lag, calculate_filter, autocorrelation
 using ReferenceMicrocalFiles
 using ZMQ
-using LsqFit
 using Base.Test
 
-function two_exponential_pulse_for_fittng(x,p)
-	# check for bad values of rise_point and fall_points
-	# return vector record containing points at the quiesence value
-	if p[1]<0 || p[2]<0 || p[1]==p[2]
-		return zeros(Float64,length(x))
-	end
-	two_exponential_pulses(length(x), p[1], p[2],p[3], (p[4],), (p[5],))
-end
-function fit_pulse_two_exponential(pulse, pretrig_nsamples, frametime)
-	pguess = zeros(Float64,5)
-	pguess[1] = length(pulse)/10 # rise points
-	pguess[2] = 3*pguess[1] # fall points
-	pguess[3] = pulse[1] # quiescent_value
-	pguess[4] = pretrig_nsamples # arrival time (really should be based on ljh)
-	pguess[5] = maximum(pulse)-pulse[1] # amplitude
-	fit = curve_fit(two_exponential_pulse_for_fittng, collect(1:length(pulse)), pulse, pguess)
-	rise_tau_s, fall_tau_s = fit.param[1]*frametime, fit.param[2]*frametime
-end
-
-
-"selectfromcriteria(x...)
-selectfromcriteria(indicator1, criteria1, indicator2, criteria2,...) takes 1 or more indicator,criteria inputs and
-returns a bitvector that is true if all indictors pass criteria[1] .< indicator .< criteria[2]"
-function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby a bit slow
-	iseven(length(x)) || error("x must be indicator,criteria,indicator,criteria...")
-	out = trues(length(x[1]))
-	for i = 1:2:length(x)
-		low, high = x[i+1]
-		out &= low .< x[i] .< high
-	end
-	out
-end
-
-"readcontinuous(ljh,maxnpoints=50_000_000)
-read from an LJH file, return pulses concatonated together to form a continuour vector
-reads either the whole file, or until maxnpoints"
-function readcontinuous(ljh,maxnpoints=50_000_000)
-	nsamp = record_nsamples(ljh)
-	maxnpoints = nsamp*div(maxnpoints, nsamp)
-	npoints = min(maxnpoints, nsamp*length(ljh))
-	data = zeros(UInt16,npoints)
-	for (i,r) in enumerate(ljh[1:div(npoints, nsamp)])
-		data[1+(i-1)*nsamp:i*nsamp] = r.data
-	end
-	data
-end
-
-"compute_noise_autocorr(ljh_filename, nsamp)
-computer noise autorcorrelation of length namp from an ljh file of name ljh_filename"
-function compute_noise_autocorr(ljh_filename, nsamp)
-	data = readcontinuous(LJHGroup(ljh_filename))
-	autocorrelation(data, nsamp, 1000) # final argument is max_excursion
-	# this needs a revamp to reject fewer noise records and also return delta_f
-end
-
-"compute_average_pulse(pulse, selection_good)
-compute the average (mean) the good pulses in pulse. good determined by bitvector selection_good"
-function compute_average_pulse(pulse, selection_good)
-	sumpulse = zeros(Int64, length(pulse[1]))
-	n=0
-	for i=1:length(selection_good) # take the mean of the pulses in a way that avoids int overflows
-		if selection_good[i]
-			sumpulse+=pulse[i]
-			n+=1
-		end
-	end
-	meanpulse = sumpulse/n
-end
-
-"compute_filter(average_pulse, noise_autocorr, f_3db, dt)\n
-compute filter given average_pulse and noise_autorr of same length, f_3db in hz, dt in seconds
-return `filter`, `vdv`"
-function compute_filter(average_pulse, noise_autocorr, f_3db, dt)
-	filter, variance = calculate_filter(average_pulse, noise_autocorr, f_3db, dt)
-	filter*=maximum(average_pulse)-minimum(average_pulse) # like mass, normalize so you get pulseheight similar to raw units
-	vdv = 1/sqrt(variance)/2.355
-	filter,vdv
-end
-
-function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pretrig_nsamples)
-	# using the noise file we will try to estimate values to use for actual cuts on pulses
-	# pretrig_rms and post_peak deriv should be fairly well estiamated by the noise file
-	ljh = LJHGroup(fname)
-
-	traces=[r.data for r in ljh[1:end]]
-	pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv,
-		peak_index, peak_value, min_value=compute_summary(traces,pretrig_nsamples,frametime(ljh))
-
-
-	# the distribution of pretrig_rms should follow a chisq distributions if the points are independent (IID) and have gaussian noise
-	# but the chisq distribution for 256 degrees of freedom looks a lot like a gaussian, so we're just going to stick with the
-	# gaussian approximation for now, plus a backup measure that says at most cut 1 % of pulses
-	n_std = 10
-	pretrig_rms_max = max(median(pretrig_rms)+n_std*std(pretrig_rms), StatsBase.percentile(pretrig_rms,99))
-	pretrig_rms_min = max(0, median(pretrig_rms)-n_std*std(pretrig_rms))
-
-
-	postpeak_deriv_max = max(median(postpeak_deriv)+n_std*std(postpeak_deriv), StatsBase.percentile(postpeak_deriv,99))
-	postpeak_deriv_min = median(postpeak_deriv)-n_std*std(postpeak_deriv)
-	(pretrig_rms_min, pretrig_rms_max), (postpeak_deriv_min, postpeak_deriv_max)
-end
-
-function estimate_peak_index_criteria(peak_index)
-	mad = mean(abs(peak_index-median(peak_index)))
-	med = median(peak_index)
-	(med-10*mad, med+10*mad)
-end
-
 empty!(perpulse_symbols) # this probably shouldn't be a global
-push!(perpulse_symbols, :filt_value, :selection_good, :pulse, :rowcount,
+push!(perpulse_symbols, :filt_value, :filt_value_dc, :selection_good, :pulse, :rowcount,
 	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
 
@@ -132,10 +22,12 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:peak_value] = RunningVector(UInt16)
 	mc[:min_value] = RunningVector(UInt16)
 	mc[:filt_value] = RunningVector(Float32)
+	mc[:filt_value_dc] = RunningVector(Float32)
 	mc[:filt_phase] = RunningVector(Float32)
 	mc[:energy] = RunningVector(Float32)
 	mc[:selection_good] = RunningSumBitVector()
 	mc[:filt_value_hist] = Histogram(0:1:20000)
+	mc[:filt_value_dc_hist] = Histogram(0:1:20000)
 	mc[:energy_hist] = Histogram(0:1:20000)
 	mc[:pulse] = RunningVector(Vector{UInt16})
 	mc[:rowcount] = RunningVector(Int)
@@ -178,7 +70,10 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_hist, counted, 1000, true))
 	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value], [:energy]) )
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
-	push!(steps, ToJLDStep([:filt_value, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
+	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:ptm_dc],:filt_value_hist, counted, 3000, true))
+	push!(steps, PerPulseStep(applycorrection, [:ptm_dc, :pretrig_mean, :filt_value], [:filt_value_dc]))
+	push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
+	push!(steps, ToJLDStep([:filt_value, :filt_value_dc, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
@@ -186,7 +81,7 @@ function setup_channel(ljh_filename, noise_filename)
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
 	push!(steps, FreeMemoryStep(graph(steps)))
-	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
+	push!(steps, MemoryLimitStep(Int(10e6))) # throw error if mc uses more than 10 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	mc[:steps]=steps
 

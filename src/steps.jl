@@ -196,12 +196,12 @@ end
 graphlabel(s::FreeMemoryStep) = "FreeMemoryStep"
 inputs(s::FreeMemoryStep) = Symbol[]
 outputs(s::FreeMemoryStep) = Symbol[]
-function dostep!(s::FreeMemoryStep, c::MassChannel)
+function dostep!(s::FreeMemoryStep, mc::MassChannel)
 	n_freed = 0
 	for q in perpulse_symbols
-		d=c[q]
+		d=mc[q]
 		l0 = length(available(d))
-		freeuntil!(d,min(earliest_needed_index(q,c,s.graph)-1,length(d)))
+		freeuntil!(d,min(earliest_needed_index(mc,q,s.graph)-1,length(d)))
 		n_freed += l0-length(available(d))
 	end
 	n_freed # steps must return an int that increases with amount of work done, and is zero when no work is done
@@ -387,11 +387,15 @@ donethru(x::AbstractRunningVector) = length(x)
 donethru(x::Vector{Float64}) = DONETHRU_MAX
 donethru(x)=DONETHRU_MAX
 earliest_needed_index(x) = donethru(x)+1
-function earliest_needed_index(c::MassChannel, q::Symbol,p::Symbol)
-	if q in keys(c)
-		return earliest_needed_index(c[q])
+
+"earliest_needed_index(mc::MassChannel,q::Symbol,p::Symbol)
+Internal function, don't call directly. Returns the earliest needed index
+for `mc[q]`, or `mc[p]` if `q=:to_disk`."
+function earliest_needed_index(mc::MassChannel,q::Symbol,p::Symbol)
+	if q in keys(mc)
+		return earliest_needed_index(mc[q])
 	elseif q==:to_disk
-		return donethru_jld(c::MassChannel,q,p)+1
+		return donethru_jld(mc::MassChannel,q,p)+1
 	end
 end
 function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
@@ -403,15 +407,18 @@ function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
 	close(jld)
 	l
 end
-function earliest_needed_index(parent::Symbol, c::MassChannel, g::AbstractGraph)
+"earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph)
+Return the earliest needed index for `mc[parent]`. `g` should be the graph
+in a `FreeMemoryStep`."
+function earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph)
 	v = vertex(g,string(parent))
 	children_vertices = Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) # consider memoizing this
 	shift!(children_vertices) # remove the first element, which is always v
 	children_sym = [symbol(label(u)) for u in children_vertices]
-	eni = [earliest_needed_index(c,q,parent) for q in children_sym]
+	eni = [earliest_needed_index(mc,q,parent) for q in children_sym]
 	# println([(q,earliest_needed_index(c,q,parent)) for q in children_sym])
 	filter!(x->x != nothing, eni)
-	isempty(eni)?length(c[parent])+1:minimum(eni)
+	isempty(eni)?length(mc[parent])+1:minimum(eni)
 end
 
 

@@ -11,6 +11,7 @@ include("calibration.jl")
 include("corrections.jl")
 include("ljhutil.jl")
 include("tes_optimal_filtering.jl")
+include("glue.jl")
 module Mass2
 
 # package code goes here

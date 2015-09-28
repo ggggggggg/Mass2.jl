@@ -45,7 +45,7 @@ function compute_summary(pulseiterator, Npre, frame_time)
         min_val = typemax(UInt16)
         for j = 1:Npre
             d=Int(data[j])
-            if d > peak_val 
+            if d > peak_val
                 peak_idx, peak_val = j, d
             elseif d < min_val
                 min_idx, min_val = j,d
@@ -61,7 +61,7 @@ function compute_summary(pulseiterator, Npre, frame_time)
         s = s2 = 0
         for j = Npre+1:Nsamp
             d=Int(data[j])
-            if d > peak_val 
+            if d > peak_val
                 peak_idx, peak_val = j, d
             elseif d < min_val
                 min_idx, min_val = j,d
@@ -93,8 +93,8 @@ function compute_summary(pulseiterator, Npre, frame_time)
             summary.peak_value[p] = UInt16(0)
         end
     end
-    (summary.pretrig_mean, summary.pretrig_rms, summary.pulse_average, summary.pulse_rms, summary.rise_time, summary.postpeak_deriv, 
-	summary.peak_index, summary.peak_value, summary.min_value)    	
+    (summary.pretrig_mean, summary.pretrig_rms, summary.pulse_average, summary.pulse_rms, summary.rise_time, summary.postpeak_deriv,
+	summary.peak_index, summary.peak_value, summary.min_value)
 end
 
 function estimate_rise_time(pulserecord, peakindex::Integer,peakval,ptm,frametime)
@@ -106,7 +106,7 @@ function estimate_rise_time(pulserecord, peakindex::Integer,peakval,ptm,frametim
     thresh90 = 0.9*(peakval-ptm)+ptm
     for j = 1:peakindex
         pulserecord[j] < thresh10 && (idx10 = j)
-        if pulserecord[j] > thresh90 
+        if pulserecord[j] > thresh90
             (idx90 = j-1)
             break
         end

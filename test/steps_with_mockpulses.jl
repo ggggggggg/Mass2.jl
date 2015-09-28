@@ -1,40 +1,5 @@
 using Mass2, Base.Test
-function compute_whitenoise_filter(pulse, selection_good) 
-	sumpulse = zeros(Int64, length(pulse[1]))
-	n=0
-	for i=1:length(selection_good) # take the mean of the pulses in a way that avoids int overflows
-		if selection_good[i]
-			sumpulse+=pulse[i]
-			n+=1
-		end
-	end
-	meanpulse = sumpulse/n
-	filter = meanpulse-mean(meanpulse) # 0 average
-	normalization = (maximum(filter)-minimum(filter))./dot(filter, filter)
-	filter*normalization
-end
-function filter1lag(pulse, filter)
-	out = Array(Float64, length(pulse))
-	for i=1:length(pulse)
-		out[i] = dot(pulse[i], filter)
-	end
-	out
-end
 
-function selectfromcriteria(x...) # placeholder, kinda ugly to use and probalby a bit slow
-	iseven(length(x)) || error("x must be indicator,criteria,indicator,criteria...")
-	out = trues(length(x[1]))
-	for i = 1:2:length(x)
-		low, high = x[i+1]
-		out &= low .< x[i] .< high
-	end
-	out
-end
-
-function calc_dc(indicator, uncorrected, selection_good)
-	σ_smooth = 1.0
-	drift_correct(indicator[:][selection_good], uncorrected[:][selection_good], σ_smooth)
-end
 
 # generate a spectra with multiple peaks for calibration testing
 dist_energies = [4000,4700,5500,6000,6800,7500,8200,9600,10000]
@@ -64,7 +29,7 @@ push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :e
 # push!(steps, FreeMemoryStep())
 
 push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
-	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, 
+	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
 	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
 
 mc=MassChannel()
@@ -98,7 +63,7 @@ mc[:known_energies] = dist_use_energies
 mc[:steps]=steps
 mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
 mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
-mc[:workdone_last] = Dict{AbstractStep, Int64}() 
+mc[:workdone_last] = Dict{AbstractStep, Int64}()
 mc[:hdf5_filename] = "steps_with_mockpulses.jld"
 mc[:oncleanfinish] = (mc)->nothing
 make_task(mc)
@@ -134,6 +99,6 @@ cal = mc[:calibration]
 
 # filt value agrees with manual calculation
 fvmanual = [dot(p, mc[:whitenoise_filter]) for p in mc[:pulse][1:end]]
-@test fvmanual == mc[:filt_value][1:end] 
+@test fvmanual == mc[:filt_value][1:end]
 
 @test all(abs(found_energies-dist_energies).<25) # check that the calibration has the correct peak assignment
