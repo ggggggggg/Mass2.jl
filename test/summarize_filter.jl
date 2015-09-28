@@ -39,13 +39,13 @@ function setup_channel(ljh_filename, noise_filename)
 	#mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
 	#mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
 	mc[:f_3db] = 10000
-	mc[:known_energies] = [6403.84, 7057.98] # FeKAlpha and FeKBeta
+	mc[:known_energies] = [5898.801,6490.59] # FeKAlpha and FeKBeta
 
 	#metadata
 	mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
 	mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
 	mc[:workdone_last] = Dict{AbstractStep, Int64}()
-	mc[:calibration_nextra] = 0 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
+	mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
 	mc[:noise_filename]=noise_filename
 	mc[:ljh_filename]=ljh_filename
@@ -70,10 +70,10 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_dc_hist, counted, 1000, true))
 	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
 	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
-	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 3000, true))
+	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 2500, true))
 	push!(steps, PerPulseStep(applycorrection, [:pretrigger_mean_drift_correction_params, :pretrig_mean, :filt_value], [:filt_value_dc]))
 	push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
-	push!(steps, ToJLDStep([:filt_value, :filt_value_dc, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
+	push!(steps, ToJLDStep([:filt_value, :filt_value_dc, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
@@ -81,7 +81,7 @@ function setup_channel(ljh_filename, noise_filename)
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
 	push!(steps, FreeMemoryStep(graph(steps)))
-	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 10 MB
+	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	mc[:steps]=steps
 
@@ -111,10 +111,10 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 				analyzing_fname = ljhname
 				info("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
-				channums = LJHUtil.ljhallchannels(ljhname)
+				channums = LJHUtil.allchannels(ljhname)
 				channums = channums[1:min(1, length(channums))]
-				ljh_filenames = [LJHUtil.ljhfnames(ljhname,channum) for channum in channums]
-				noise_filenames = [LJHUtil.ljhfnames(last_noise_filename,channum) for channum in channums]
+				ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]
+				noise_filenames = [LJHUtil.fnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
 					masschannels[channums[i]] = setup_channel(ljh_filenames[i], noise_filenames[i])
 				end
@@ -137,7 +137,7 @@ end
 
 masschannels, watcher_exitchannel, watcher_task = schedule_MASS_MATTER_watcher()
 
-rmf = ReferenceMicrocalFiles.dict["tupac_fe_emission"]
+rmf = ReferenceMicrocalFiles.dict["good_mnka_mystery"]
 
 t = @schedule begin
 getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
@@ -166,7 +166,7 @@ end # write to MATTER sentinel file to simulate matter writing various files
 
 
 wait(t)
-mc=masschannels[1];
+mc=masschannels[13];
 
 wait(mc[:task])
 @assert mc[:task].state == :done

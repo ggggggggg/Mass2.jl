@@ -298,19 +298,19 @@ default_vertex_attrs["color"]="red"
 default_vertex_attrs["fillcolor"]="lightgrey"
 default_vertex_attrs["style"]="filled"
 label(v)=v.label
-vertex_labels(g) = [label(v) for v in vertices(g)]
+vertex_labels(g) = [label(v) for v in Graphs.vertices(g)]
 function vertex(g,label)
 	i=first(indexin([label], vertex_labels(g)))
 	i==0 && error("no vertex with label $label in $v")
-	vertices(g)[i]
+	Graphs.vertices(g)[i]
 end
 add_exvertex!(g,name::Symbol, attrs_in) = add_exvertex!(g,string(name), attrs_in)
 function add_exvertex!(g, name,attrs_in)
-    verts = vertices(g)
+    verts = Graphs.vertices(g)
     vert_labels = [label(v) for v in verts]
     if !(name in vert_labels)
-        v = ExVertex(num_vertices(g)+1, name)
-        attrs = attributes(v,g)
+        v = Graphs.ExVertex(Graphs.num_vertices(g)+1, name)
+        attrs = Graphs.attributes(v,g)
         attrs["label"]=name
         for (key,val) in default_vertex_attrs
         	attrs[key]=val
@@ -318,7 +318,7 @@ function add_exvertex!(g, name,attrs_in)
         for (key,val) in attrs_in
         	attrs[key]=val
         end
-        add_vertex!(g, v)
+        Graphs.add_vertex!(g, v)
         v
     else
         first(verts[indexin([name],vert_labels)])
@@ -328,7 +328,7 @@ add_perpulse_data!(g,name)=add_exvertex!(g,name,[("shape","doubleoctagon"),("typ
 add_other_data!(g,name)=add_exvertex!(g,name,[("shape","octagon"),("type","other_data")])
 add_func!(g,name)=add_exvertex!(g,name,[("shape","box"),("type","function")])
 function Graphs.add_edge!(g,label1, label2)
-    verts = vertices(g)
+    verts = Graphs.vertices(g)
     vert_labels = [label(v) for v in verts]
     i1 = first(indexin([label1], vert_labels))
     i2 = first(indexin([label2], vert_labels))
@@ -341,24 +341,24 @@ function add_step!(g, s)
     vf = add_func!(g,graphlabel(s))
     for p in perpulse_inputs(s)
         v=add_perpulse_data!(g,p)
-        add_edge!(g,v,vf)
+        Graphs.add_edge!(g,v,vf)
     end
     for o in other_inputs(s)
         v=add_other_data!(g,o)
-        add_edge!(g,v,vf)
+        Graphs.add_edge!(g,v,vf)
     end
     for p in perpulse_outputs(s)
         v=add_perpulse_data!(g,p)
-        add_edge!(g,vf,v)
+        Graphs.add_edge!(g,vf,v)
     end
     for o in other_outputs(s)
         v=add_other_data!(g,o)
-        add_edge!(g,vf,v)
+        Graphs.add_edge!(g,vf,v)
     end
     g
 end
-function Graphs.graph(steps::Vector{AbstractStep})
-	g=Graphs.inclist(ExVertex, is_directed=true)
+function graph(steps::Vector{AbstractStep})
+	g=Graphs.inclist(Graphs.ExVertex, is_directed=true)
 	for s in steps
     	add_step!(g,s)
 	end
@@ -407,10 +407,10 @@ function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
 	close(jld)
 	l
 end
-"earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph)
+"earliest_needed_index(mc::MassChannel, parent::Symbol, g::Graphs.AbstractGraph)
 Return the earliest needed index for `mc[parent]`. `g` should be the graph
 in a `FreeMemoryStep`."
-function earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph)
+function earliest_needed_index(mc::MassChannel, parent::Symbol, g::Graphs.AbstractGraph)
 	v = vertex(g,string(parent))
 	next_neighbor_vertices = graph_out_next_neighbors(v,g)
 	children_sym = [symbol(label(u)) for u in next_neighbor_vertices]
@@ -420,11 +420,11 @@ function earliest_needed_index(mc::MassChannel, parent::Symbol, g::AbstractGraph
 	isempty(eni)?length(mc[parent])+1:minimum(eni)
 end
 
-"graph_out_next_neighbors(v,g::AbstractGraph) Find all the next nearest neighbors of vertex `v` in `g`. Used because
+"graph_out_next_neighbors(v,g::Graphs.AbstractGraph) Find all the next nearest neighbors of vertex `v` in `g`. Used because
 in Mass2 steps graph structure, the nearest neighbors of data are usually functions, and the nearest neighbors
 of functions are data. Only data has `earliest_needed_index` defined, so we want to find the nearest
 data neighbors of data when calculating what we can free."
-function graph_out_next_neighbors(v,g::AbstractGraph)
+function graph_out_next_neighbors(v,g::Graphs.AbstractGraph)
 	# use Graphs.visited_vertices(g,Graphs.BreadthFirst(),v) to find all dependents
 	children_vertices = Graphs.out_neighbors(v,g)
 	next_neighbor_vertices = Any[]

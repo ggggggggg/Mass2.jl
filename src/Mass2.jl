@@ -1,7 +1,8 @@
 # eventually these should go inside the module or their own modules and I should choose what to export. not yet
 include("LJH.jl")
 using LJH
-using Dierckx, PyCall, HDF5, ArrayViews, Distributions, KernelDensity, PyPlot, JLD, Graphs
+using Dierckx, PyCall, HDF5, ArrayViews, Distributions, KernelDensity, PyPlot, JLD
+import Graphs
 
 include("summarize.jl")
 include("mockpulses.jl")
