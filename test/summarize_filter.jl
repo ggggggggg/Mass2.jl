@@ -89,6 +89,7 @@ function setup_channel(ljh_filename, noise_filename)
 	mc
 end
 
+
 function MASS_MATTER_watcher(masschannels, exitchannel)
 	ljhname, writingbool = "",false
 	last_noise_filename = ""

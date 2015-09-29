@@ -7,6 +7,7 @@ import Graphs
 include("summarize.jl")
 include("mockpulses.jl")
 include("runningvectors.jl")
+include("histogram.jl")
 include("steps.jl")
 include("calibration.jl")
 include("corrections.jl")

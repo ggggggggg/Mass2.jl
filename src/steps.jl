@@ -1,21 +1,38 @@
 using RunningVectors
 import JLD: JldGroup, JldFile, JldDataset, HDF5Dataset
-
+import Base: keys, length, values, getindex, setindex!, get, haskey
 const DONETHRU_MAX = typemax(Int)-1
 
-include("histogram.jl")
-
-
-typealias MassChannel Dict{Symbol,Any}
-const perpulse_symbols =  Set{Symbol}()
-isperpulse(s::Symbol) = s in perpulse_symbols
-
-
-
-
-
-
 abstract AbstractStep
+
+
+type MassChannel
+	d::Dict{Symbol,Any} # contains pulse related data
+	# workdone_cumulative[i] represents how much work steps[i] has done
+	# same idea for time_elapsed_cumulative and workdone_last
+	steps::Vector{AbstractStep}
+	workdone_cumulative::Vector{Int}
+	time_elapsed_cumulative::Vector{Float64}
+	workdone_last::Vector{Int}
+	perpulse_symbols::Set{Symbol}
+	task::Nullable{Task}
+	waittask::Nullable{Task} # used to supress printing of error message in task
+	endertask::Nullable{Task} # schedule this to end task when all(workdone_last.==0)
+	exitchannel::Channel{Int}
+	oncleanfinish::Function
+end
+"Create an empty MassChannel"
+MassChannel() = MassChannel(Dict{Symbol,Any}(),Array{AbstractStep}(0),Vector{Int}(),Vector{Int}(),Vector{Int}(),
+  							Set{Symbol}(), Nullable{Task}(), Nullable{Task}(), Nullable{Task}(),Channel{Int}(1), (mc)->nothing)
+# delegate a few functions to the dict d, to enable mc[:pulse] = blah
+for f in (:keys, :length, :values)
+	@eval $f(mc::MassChannel) = $f(mc.d)
+end
+getindex(mc::MassChannel, i) = getindex(mc.d,i)
+setindex!(mc::MassChannel, i...) = setindex!(mc.d, i...)
+get(mc::MassChannel, i...) = get(mc.d, i...)
+haskey(mc::MassChannel,key) = haskey(mc.d,key)
+
 
 """PerPulseStep is for things like filtering data, where a perpulse input (say the actual pulse record) is transformed to a perpulse
 output (say the filtered pulse height, aka filt_value). For scalars this is easily expressed as
@@ -54,6 +71,7 @@ end
 type FreeMemoryStep <: AbstractStep
 	graph # graph(c[:steps]) most likley
 end
+isperpulse(q::Symbol, c::MassChannel) = q in c.perpulse_symbols
 getfunction(s::AbstractStep) = s.func
 graphlabel(s::AbstractStep) = string(getfunction(s))
 inputs(s::AbstractStep) = s.inputs
@@ -61,23 +79,23 @@ outputs(s::AbstractStep) = s.outputs
 inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in inputs(s)]
 outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in outputs(s)]
 inputs(s::AbstractStep, c::MassChannel, r::UnitRange{Int}) =
-[isperpulse(q)?c[q][r]:c[q] for q in s.inputs]
-perpulse_inputs(s::AbstractStep) = inputs(s)[[isperpulse(q) for q in inputs(s)]]
-perpulse_outputs(s::AbstractStep) = outputs(s)[[isperpulse(q) for q in outputs(s)]]
-perpulse_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_inputs(s)]
-perpulse_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_outputs(s)]
-other_inputs(s::AbstractStep) = inputs(s)[[!isperpulse(q) for q in inputs(s)]]
-other_outputs(s::AbstractStep) = outputs(s)[[!isperpulse(q) for q in outputs(s)]]
-other_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_inputs(s)]
-other_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_outputs(s)]
+[isperpulse(q,c)?c[q][r]:c[q] for q in s.inputs]
+perpulse_inputs_key(s::AbstractStep, c::MassChannel) = inputs(s)[[isperpulse(q,c) for q in inputs(s)]]
+perpulse_outputs_key(s::AbstractStep, c::MassChannel) = outputs(s)[[isperpulse(q,c) for q in outputs(s)]]
+perpulse_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_inputs_key(s,c)]
+perpulse_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_outputs_key(s,c)]
+other_inputs_key(s::AbstractStep, c::MassChannel) = inputs(s)[[!isperpulse(q,c) for q in inputs(s)]]
+other_outputs_key(s::AbstractStep, c::MassChannel) = outputs(s)[[!isperpulse(q,c) for q in outputs(s)]]
+other_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_inputs_key(s,c)]
+other_outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in other_outputs_key(s,c)]
 mindonethru(x) = length(x) == 0 ? DONETHRU_MAX : minimum(map(donethru,x))
 Base.range(s::AbstractStep, c::MassChannel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
-other_inputs_exist(s::AbstractStep, c::MassChannel) = all([haskey(c,q) for q in other_inputs(s)])
+other_inputs_exist(s::AbstractStep, c::MassChannel) = all([haskey(c,q) for q in other_inputs_key(s,c)])
 function debug(s::AbstractStep, c::MassChannel)
 	dump(s)
 	println(range(s,c))
 	println("perpulse inputs")
-	for pi in perpulse_inputs(s)
+	for pi in perpulse_inputs_key(s,c)
 		try
 			println((pi, typeof(c[pi]), donethru(c[pi])))
 		catch
@@ -85,7 +103,7 @@ function debug(s::AbstractStep, c::MassChannel)
 		end
 	end
 	println("other inputs")
-	for oi in other_inputs(s)
+	for oi in other_inputs_key(s,c)
 		try
 			println((oi, typeof(c[oi]), donethru(c[oi])))
 		catch
@@ -93,7 +111,7 @@ function debug(s::AbstractStep, c::MassChannel)
 		end
 	end
 	println("perpulse outputs")
-	for po in perpulse_outputs(s)
+	for po in perpulse_outputs_key(s,c)
 		try
 			println((po, typeof(c[po]), donethru(c[po])))
 		catch
@@ -101,7 +119,7 @@ function debug(s::AbstractStep, c::MassChannel)
 		end
 	end
 	println("other outputs")
-	for oo in other_outputs(s)
+	for oo in other_outputs_key(s,c)
 		try
 			println((oo, typeof(c[oo]), donethru(c[oo])))
 		catch
@@ -134,9 +152,10 @@ function dostep!(s::PerPulseStep,c::MassChannel)
 	r
 end
 
-outputs(s::HistogramStep) = other_inputs(s) # for now I'm conflating the idea of perpulse and inputs vs inputs/outputs
-perpulse_outputs(s::HistogramStep) = Symbol[]
-other_outputs(s::HistogramStep) = outputs(s)
+#HistogramStep really has intputs, other_inputs, and inplace inputs (the histogram, though I guess it could be something else)
+#For now we're just going to say it has no outputs, which is not totally innacurate, though one might want to say the
+# in place input is the output
+outputs(s::HistogramStep) = Symbol[]
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
@@ -181,6 +200,7 @@ function dostep!(s::ThresholdStep, c::MassChannel)
 		return false
 	end
 end
+
 
 graphlabel(s::MockPulsesStep) = "MockPulsesStep"
 inputs(s::MockPulsesStep) = []
@@ -267,7 +287,7 @@ outputs(s::ToJLDStep) = []
 function dostep!(s::ToJLDStep,c::MassChannel)
 	n_written = 0
 	jldopen(s.jldfilename,isfile(s.jldfilename) ? "r+" : "w") do jld
-		for (sym,value) in zip(perpulse_inputs(s),perpulse_inputs(s,c))
+		for (sym,value) in zip(perpulse_inputs_key(s,c),perpulse_inputs(s,c))
 			length(value) == 0 && continue #don't create 1 entry datasets with no meaninful data in them
 			d=d_require(jld, string(sym), eltype(value))
 			# account for the fact that the dataset is created with 1 element, not zero
@@ -281,11 +301,11 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 		for (sym, path) in s.one_time_inputs
 			has(jld.plain, path) && continue # if something is already written to the path, move on
 			haskey(c,sym) || continue # if the symbol doesn't exist in the masschannel dict, move on
-			jld[path]=c[sym] # otherwise write to file
+			jld.plain[path]=c[sym] # otherwise write to file, write to .plain to avoid any julia specific formatting
 		end
 	end
 	# JLD.delete! doesn't work well enough to to this, it can leave spare references around
-	# for (sym, value) in  zip(other_inputs(s),other_inputs(s,c))
+	# for (sym, value) in  zip(other_inputs_key(s,c),other_inputs(s,c))
 	# 	# warn("doesn't work if you do it more than once")
 	# 	# update!(jld, string(sym), value)
 	# end
@@ -337,38 +357,41 @@ function Graphs.add_edge!(g,label1, label2)
     end
     add_edge!(g, verts[i1], verts[i2])
 end
-function add_step!(g, s)
+function add_step!(g, s::AbstractStep, c::MassChannel)
     vf = add_func!(g,graphlabel(s))
-    for p in perpulse_inputs(s)
+    for p in perpulse_inputs_key(s,c)
         v=add_perpulse_data!(g,p)
         Graphs.add_edge!(g,v,vf)
     end
-    for o in other_inputs(s)
+    for o in other_inputs_key(s,c)
         v=add_other_data!(g,o)
         Graphs.add_edge!(g,v,vf)
     end
-    for p in perpulse_outputs(s)
+    for p in perpulse_outputs_key(s,c)
         v=add_perpulse_data!(g,p)
         Graphs.add_edge!(g,vf,v)
     end
-    for o in other_outputs(s)
+    for o in other_outputs_key(s,c)
         v=add_other_data!(g,o)
         Graphs.add_edge!(g,vf,v)
     end
     g
 end
-function graph(steps::Vector{AbstractStep})
+"graph(steps::Vector{AbstractStep},c::MassChannel)
+Generate a directed graph representing the steps in `steps`. You must pass
+`c` to allow it to figure out which things are per_pulse and which aren't."
+function graph(steps::Vector{AbstractStep},c::MassChannel)
 	g=Graphs.inclist(Graphs.ExVertex, is_directed=true)
 	for s in steps
-    	add_step!(g,s)
+    	add_step!(g,s,c)
 	end
 	g
 end
 function savegraph(fname,g)
-dot = Graphs.to_dot(g)
-open("$fname.dot","w") do f
-	write(f,dot)
-	end
+	dot = Graphs.to_dot(g)
+	open("$fname.dot","w") do f
+		write(f,dot)
+		end
 end
 # the following code is correct and useful, but it conflicts with @pyimport
 # so I'm commenting it until that is resolved
@@ -440,6 +463,13 @@ end
 workunits(x::Int) = x
 workunits(r::Range) = length(r)
 workunits(x::Bool) = convert(Int,x)
+# for printing out work reports
+workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::ToJLDStep, t) = "ToJLDStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
+workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0.2f pulses/s",n/t)
+workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) $n executions at "*@sprintf("%0.2f executions/s",n/t)
+workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
 
 
 # ## functions for repetetivley running many steps in a MassChannel
@@ -453,40 +483,59 @@ end
 
 """Continually call `dostep!(s,mc)` for `s` in `mc[:steps]`.
 For each step measure `time_elapsed_cumulative`, `workdone_cumulative` and `workdone_last`.
-Exits when `exitchannel` is ready (aka has a value `put!` into it), writes "clean_exit_posix_timestamp_s"
-to `mc[:hdf5_filename]` as a mark that analysis succesfuly completed. That part should probably made more general by adding a finisher function."""
-function repeatsteps!(mc::MassChannel, exitchannel)
-	while !isready(exitchannel)
-		for s in mc[:steps]
+Exits when `exitchannel` is ready (aka has a value `put!` into it). This should normally be done
+by calling `plan_to_end(mc)`. Just before exiting it calls `mc.oncleanfinish(mc)`."""
+function repeatsteps!(mc::MassChannel)
+	while !isready(mc.exitchannel)
+		for (i,s) in enumerate(mc.steps)
 			yield()
 			time_elapsed = @elapsed workdone = workunits(dostep!(s,mc))
-			workdone_cumulative = get(mc[:workdone_cumulative],s,0)
-			mc[:workdone_cumulative][s] = workdone_cumulative+workdone
-			time_elapsed_cumulative = get(mc[:time_elapsed_cumulative],s,0)
-			mc[:time_elapsed_cumulative][s] = time_elapsed_cumulative+time_elapsed
-			mc[:workdone_last][s] = workdone
+			mc.workdone_cumulative[i]+=workdone
+			mc.time_elapsed_cumulative[i]+=time_elapsed
+			mc.workdone_last[i] = workdone
 		end
 	end
-	mc[:oncleanfinish](mc)
+	mc.oncleanfinish(mc)
 end
 
-"""Creates `mc[:task]`, which is a task to run the steps in `mc`. Call `schedule(mc)` to schedule the task. Creates a few helper items in `mc` prefaced with underscores."""
-function make_task(mc::MassChannel)
-	mc[:_exitchannel] = Channel{Int}(1) # repeatsteps! ends if this channel isready (aka any value is put! into it)
-	mc[:task] = @task repeatsteps!(mc,mc[:_exitchannel])
-	mc[:_waittask] = @schedule try wait(mc[:task]) catch ex isa(ex, InterruptException) && throw(ex) end # suppress printing of error message
-	mc[:_endertask] = @task end_when_all_steps_do_no_work(mc[:workdone_last], mc[:_exitchannel], mc[:task])
+"""Creates prep `mc.task`, which is a task to run the steps in `mc`. Call `schedule(mc)` to schedule the task.
+Preps `mc.waittask`, which is used to suppress automatic printing of error message.
+Preps `mc.endertask`, which will end `mc.task` when all steps report having done no work on the last attempt.
+Use `plan_to_end(mc)` to schedule `mc.endertask`, and to end `task`. You can `put!(mc.exitchannel,1)` to end all tasks
+manually if needed, but it is not preffered."""
+function preptasks!(mc::MassChannel)
+	@assert isnull(mc.task) "trying to prep_tasks on MassChannel that has already been prepped"
+	@assert isnull(mc.waittask) "trying to prep_tasks on MassChannel that has already been prepped"
+	@assert isnull(mc.endertask) "trying to prep_tasks on MassChannel that has already been prepped"
+	mc.task = Nullable(@task repeatsteps!(mc))
+	mc.waittask = Nullable(@schedule try wait(mc.task) catch ex isa(ex, InterruptException) && throw(ex) end) # suppress printing of error message
+	mc.endertask = Nullable(@task end_when_all_steps_do_no_work(mc.workdone_last, mc.exitchannel, mc.task.value))
+end
+
+function setsteps!(mc::MassChannel, steps::Vector{AbstractStep})
+	@assert length(mc.steps)==0 "using setsteps! on a MassChannel that already has steps seems like a bad idea, try addstep!"
+	mc.steps = steps
+	mc.workdone_cumulative = zeros(Int, length(steps))
+	mc.workdone_last = zeros(Int, length(steps))
+	mc.time_elapsed_cumulative = zeros(Float64, length(steps))
+end
+function addstep!(mc::MassChannel, step::AbstractStep)
+	push!(mc.steps,step)
+	push!(mc.workdone_cumulative,0)
+	push!(mc.workdone_last,0)
+	push!(mc.time_elapsed_cumulative,0)
+	@assert length(mc.steps)==length(mc.workdone_cumulative)==length(mc.workdone_last)==length(mc.time_elapsed_cumulative) "These things always have to have the same length"
 end
 
 """As long as any step has nonzero `workdone_last`, yield. If all steps have zero `workdone_last` put `1` into `exitchannel`
 to cause `task` to end. Exits if `istaskdone(task)`, to account for errors in `task`. """
 function end_when_all_steps_do_no_work(workdone_last, exitchannel, task)
-	while !all(collect(values(workdone_last)).==0) && !istaskdone(task)
+	while !all(workdone_last.==0) && !istaskdone(task)
 		yield()
 	end
 	!isready(exitchannel) && put!(exitchannel,1)
 	return nothing
 end
 
-Base.schedule(mc::MassChannel) = schedule(mc[:task])
-plan_to_end(mc::MassChannel) = schedule(mc[:_endertask])
+Base.schedule(mc::MassChannel) = schedule(mc.task.value)
+plantoend(mc::MassChannel) = schedule(mc.endertask.value) # need the .value since I'm using Nullable tasks

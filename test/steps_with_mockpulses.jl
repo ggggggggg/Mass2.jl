@@ -25,14 +25,15 @@ push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_g
 push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
 push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
 
-#push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy]))
+#push!(steps, ToJLDStep([:filt_value,:pretrig_rms, :energy:
 # push!(steps, FreeMemoryStep())
 
-push!(perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
-	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
-	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
+
 
 mc=MassChannel()
+push!(mc.perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
+	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
+	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
 mc[:pretrig_mean] = RunningVector(Float64)
 mc[:pretrig_rms] = RunningVector(Float64)
 mc[:pulse_average] = RunningVector(Float64)
@@ -60,30 +61,21 @@ mc[:postpeak_deriv_criteria] = (0.0,50.0)
 mc[:known_energies] = dist_use_energies
 
 # metadata
-mc[:steps]=steps
-mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
-mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
-mc[:workdone_last] = Dict{AbstractStep, Int64}()
-mc[:hdf5_filename] = "steps_with_mockpulses.jld"
-mc[:oncleanfinish] = (mc)->nothing
-make_task(mc)
+mc[:hdf5_filename] = mktemp()[1]
+setsteps!(mc, steps)
+preptasks!(mc)
 
-workstat(n, s::MockPulsesStep, t) = "MockPulsesStep "*@sprintf("%0.2f pulses/s",n/t)
-workstat(n, s::PerPulseStep, t) = "PerPulse:$(graphlabel(s)) "*@sprintf("%0.2f pulses/s",n/t)
-workstat(n, s::ToJLDStep, t) = "ToJLDStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
-workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0.2f pulses/s",n/t)
-workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) $n executions at "*@sprintf("%0.2f executions/s",n/t)
-workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
 
-savegraph("graph",graph(steps))
+
+savegraph("graph",graph(steps,mc))
 
 
 isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 schedule(mc)
 sleep(2) # make sure steps have time do some work before planning to end, test fails without this
 # may need better system for this
-plan_to_end(mc)
-wait(mc[:task])
+plantoend(mc)
+wait(mc.task.value)
 
 eh = mc[:energy_hist]
 @test counted(eh) == sum(counts(eh))
