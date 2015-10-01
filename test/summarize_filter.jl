@@ -3,15 +3,15 @@ using ReferenceMicrocalFiles
 using ZMQ
 using Base.Test
 
-empty!(perpulse_symbols) # this probably shouldn't be a global
-push!(perpulse_symbols, :filt_value, :filt_value_dc, :selection_good, :pulse, :rowcount,
-	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
-	:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
+
 
 function setup_channel(ljh_filename, noise_filename)
 	ljh = LJHGroup(ljh_filename)
 
 	mc=MassChannel()
+	push!(mc.perpulse_symbols, :filt_value, :filt_value_dc, :selection_good, :pulse, :rowcount,
+		:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
+		:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
 	mc[:pretrig_mean] = RunningVector(Float32)
 	mc[:pretrig_rms] = RunningVector(Float32)
 	mc[:pulse_average] = RunningVector(Float32)
@@ -66,13 +66,13 @@ function setup_channel(ljh_filename, noise_filename)
 	push!(steps, ThresholdStep(estimate_peak_index_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true))
 	push!(steps, ThresholdStep(fit_pulse_two_exponential,[:average_pulse, :pretrig_nsamples, :frametime], [:rise_tau_s, :fall_tau_s], :filt_value, length, 10, true))
 	push!(steps, PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]))
-	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value]))
+	push!(steps, HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value], [:filt_value_hist]))
 	push!(steps, ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_dc_hist, counted, 1000, true))
 	push!(steps, PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]) )
-	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy]))
+	push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy], [:energy_hist]))
 	push!(steps, ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 2500, true))
 	push!(steps, PerPulseStep(applycorrection, [:pretrigger_mean_drift_correction_params, :pretrig_mean, :filt_value], [:filt_value_dc]))
-	push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc]))
+	push!(steps, HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc], [:filt_value_dc_hist]))
 	push!(steps, ToJLDStep([:filt_value, :filt_value_dc, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
@@ -80,12 +80,11 @@ function setup_channel(ljh_filename, noise_filename)
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
 	mc[:hdf5_filename]))
-	push!(steps, FreeMemoryStep(graph(steps)))
+	push!(steps, FreeMemoryStep(graph(steps,mc)))
 	push!(steps, MemoryLimitStep(Int(4e6))) # throw error if mc uses more than 4 MB
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
-	mc[:steps]=steps
-
-	make_task(mc)
+	setsteps!(mc, steps)
+	preptasks!(mc)
 	mc
 end
 
@@ -101,7 +100,7 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 		if ljhname != oldljhname
 			if oldljhname == analyzing_fname # stop tasks for previous file once they've finished their work
 				info("allowing analysis tasks for $oldljhname to end")
-				map(plan_to_end, values(masschannels))
+				map(plantoend, values(masschannels))
 				analyzing_fname=""
 			end
 			if contains(ljhname, "noise") || contains(ljhname,".noi")
@@ -152,7 +151,7 @@ getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
 	sleep(2)
 	put!(watcher_exitchannel,1)
 	@schedule begin
-		tasks = [mc[:task] for (ch, mc) in masschannels]
+		tasks = [mc.task.value for (ch, mc) in masschannels]
 		for task in tasks # wait for all tasks to finish
 			try wait(task) end # wait rethrows errors from failed tasks, we can always look at them later
 		end
@@ -169,5 +168,5 @@ end # write to MATTER sentinel file to simulate matter writing various files
 wait(t)
 mc=masschannels[13];
 
-wait(mc[:task])
-@assert mc[:task].state == :done
+wait(mc.task.value)
+@assert mc.task.value.state == :done

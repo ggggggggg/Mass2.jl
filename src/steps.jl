@@ -52,6 +52,7 @@ end
 type HistogramStep <: AbstractStep
 	func::Function
 	inputs::Vector{Symbol}
+	outputs::Vector{Symbol} # this contains the Histogram which is also an input, should be redone someday, maybe the histogram can be a member
 end
 type ThresholdStep <: AbstractStep
 	func::Function
@@ -155,7 +156,7 @@ end
 #HistogramStep really has intputs, other_inputs, and inplace inputs (the histogram, though I guess it could be something else)
 #For now we're just going to say it has no outputs, which is not totally innacurate, though one might want to say the
 # in place input is the output
-outputs(s::HistogramStep) = Symbol[]
+outputs(s::HistogramStep) = s.outputs
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
@@ -218,7 +219,7 @@ inputs(s::FreeMemoryStep) = Symbol[]
 outputs(s::FreeMemoryStep) = Symbol[]
 function dostep!(s::FreeMemoryStep, mc::MassChannel)
 	n_freed = 0
-	for q in perpulse_symbols
+	for q in mc.perpulse_symbols
 		d=mc[q]
 		l0 = length(available(d))
 		freeuntil!(d,min(earliest_needed_index(mc,q,s.graph)-1,length(d)))
