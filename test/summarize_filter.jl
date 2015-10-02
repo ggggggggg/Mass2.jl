@@ -55,34 +55,33 @@ function setup_channel(ljh_filename, noise_filename)
 	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
 	steps = AbstractStep[
-	GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100),
-	PerPulseStep(compute_summary, [:pulse, :pretrig_nsamples, :frametime],
-	[:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv, :peak_index, :peak_value, :min_value]),
-	PerPulseStep(selectfromcriteria, [:pretrig_rms, :pretrig_rms_criteria, :peak_index, :peak_index_criteria, :postpeak_deriv, :postpeak_deriv_criteria], [:selection_good]),
-	ThresholdStep(compute_average_pulse, [:pulse, :selection_good], [:average_pulse], :selection_good, sum, 100, true),
-	ThresholdStep(compute_filter, [:average_pulse, :noise_autocorr, :f_3db, :frametime], [:filter, :vdv], :selection_good, sum, 100, true),
-	ThresholdStep(compute_noise_autocorr,[:noise_filename, :samples_per_record],[:noise_autocorr], :selection_good, sum, 100, true),
-	ThresholdStep(estimate_pretrig_rms_and_postpeak_deriv_criteria,[:noise_filename, :pretrig_nsamples],[:pretrig_rms_criteria, :postpeak_deriv_criteria], :pulse, length, 100, true),
-	ThresholdStep(estimate_peak_index_criteria,[:peak_index],[:peak_index_criteria], :rise_time, length, 100, true),
-	ThresholdStep(fit_pulse_two_exponential,[:average_pulse, :pretrig_nsamples, :frametime], [:rise_tau_s, :fall_tau_s], :filt_value, length, 10, true),
-	PerPulseStep(filter5lag, [:filter, :pulse], [:filt_value, :filt_phase]),
-	HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value], [:filt_value_hist]),
-	ThresholdStep(calibrate_nofit, [:filt_value_dc_hist,:known_energies, :calibration_nextra],[:calibration],:filt_value_dc_hist, counted, 1000, true),
-	PerPulseStep(apply_calibration, [:calibration, :filt_value_dc], [:energy]),
-	HistogramStep(update_histogram!, [:energy_hist, :selection_good, :energy], [:energy_hist]),
-	ThresholdStep(calc_dc, [:pretrig_mean, :filt_value, :selection_good], [:pretrigger_mean_drift_correction_params],:filt_value_hist, counted, 2500, true),
-	PerPulseStep(applycorrection, [:pretrigger_mean_drift_correction_params, :pretrig_mean, :filt_value], [:filt_value_dc]),
-	HistogramStep(update_histogram!, [:filt_value_dc_hist, :selection_good, :filt_value_dc], [:filt_value_dc_hist]),
+	GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100)
+	@perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
+	@threshold pretrig_rms_criteria, postpeak_deriv_criteria = estimate_pretrig_rms_and_postpeak_deriv_criteria(noise_filename, pretrig_nsamples) when length(pulse) > 100
+	@threshold peak_index_criteria = estimate_peak_index_criteria(peak_index) when length(peak_index)>100
+	@perpulse selection_good = selectfromcriteria(pretrig_rms, pretrig_rms_criteria, peak_index, peak_index_criteria, postpeak_deriv, postpeak_deriv_criteria)
+	@threshold average_pulse = compute_average_pulse(pulse, selection_good) when sum(selection_good) > 100
+	@threshold rise_tau_s, fall_tau_s = fit_pulse_two_exponential(average_pulse, pretrig_nsamples, frametime) when length(filt_value)>10
+	@threshold noise_autocorr = compute_noise_autocorr(noise_filename, samples_per_record) when sum(selection_good) > 100
+	@threshold filter, vdv = compute_filter(average_pulse, noise_autocorr, f_3db, frametime) when sum(selection_good) > 100
+	@perpulse filt_value, filt_phase = filter5lag(filter, pulse)
+	@threshold pretrigger_mean_drift_correction_params = calc_dc(pretrig_mean, filt_value, selection_good) when sum(selection_good)>2500
+	@perpulse filt_value_dc = applycorrection(pretrigger_mean_drift_correction_params, pretrig_mean, filt_value)
+	@threshold calibration = calibrate_nofit(filt_value_dc_hist, known_energies, calibration_nextra) when counted(filt_value_dc_hist)>2500
+	@perpulse energy = apply_calibration(calibration, filt_value_dc)
+	@histogram update_histogram!(filt_value_hist, selection_good, filt_value)
+	@histogram update_histogram!(energy_hist, selection_good, energy)
+	@histogram update_histogram!(filt_value_dc_hist, selection_good, filt_value_dc)
 	ToJLDStep([:filt_value, :filt_value_dc, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
 	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
-	mc[:hdf5_filename]),
+	mc[:hdf5_filename])
 	MemoryLimitStep(Int(4e6)) # throw error if mc uses more than 4 MB
+	FreeMemoryStep()
 	] # end steps
-	push!(steps, FreeMemoryStep(graph(steps,mc)))
 	# write a verification function that makes sure all inputs either exist, or are the output of another step
 	setsteps!(mc, steps)
 	preptasks!(mc)
@@ -171,3 +170,5 @@ mc=masschannels[13];
 
 wait(mc.task.value)
 @assert mc.task.value.state == :done
+
+	a=4

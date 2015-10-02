@@ -20,10 +20,11 @@ type MassChannel
 	endertask::Nullable{Task} # schedule this to end task when all(workdone_last.==0)
 	exitchannel::Channel{Int}
 	oncleanfinish::Function
+	graph
 end
 "Create an empty MassChannel"
 MassChannel() = MassChannel(Dict{Symbol,Any}(),Array{AbstractStep}(0),Vector{Int}(),Vector{Int}(),Vector{Int}(),
-  							Set{Symbol}(), Nullable{Task}(), Nullable{Task}(), Nullable{Task}(),Channel{Int}(1), (mc)->nothing)
+  							Set{Symbol}(), Nullable{Task}(), Nullable{Task}(), Nullable{Task}(),Channel{Int}(1), (mc)->nothing, nothing)
 # delegate a few functions to the dict d, to enable mc[:pulse] = blah
 for f in (:keys, :length, :values)
 	@eval $f(mc::MassChannel) = $f(mc.d)
@@ -70,7 +71,6 @@ type MockPulsesStep <: AbstractStep
 	outputs::Vector{Symbol}
 end
 type FreeMemoryStep <: AbstractStep
-	graph # graph(c[:steps]) most likley
 end
 isperpulse(q::Symbol, c::MassChannel) = q in c.perpulse_symbols
 getfunction(s::AbstractStep) = s.func
@@ -222,7 +222,7 @@ function dostep!(s::FreeMemoryStep, mc::MassChannel)
 	for q in mc.perpulse_symbols
 		d=mc[q]
 		l0 = length(available(d))
-		freeuntil!(d,min(earliest_needed_index(mc,q,s.graph)-1,length(d)))
+		freeuntil!(d,min(earliest_needed_index(mc,q,mc.graph)-1,length(d)))
 		n_freed += l0-length(available(d))
 	end
 	n_freed # steps must return an int that increases with amount of work done, and is zero when no work is done
@@ -516,6 +516,7 @@ end
 function setsteps!(mc::MassChannel, steps::Vector{AbstractStep})
 	@assert length(mc.steps)==0 "using setsteps! on a MassChannel that already has steps seems like a bad idea, try addstep!"
 	mc.steps = steps
+	mc.graph = graph(mc.steps, mc)
 	mc.workdone_cumulative = zeros(Int, length(steps))
 	mc.workdone_last = zeros(Int, length(steps))
 	mc.time_elapsed_cumulative = zeros(Float64, length(steps))
@@ -525,6 +526,7 @@ function addstep!(mc::MassChannel, step::AbstractStep)
 	push!(mc.workdone_cumulative,0)
 	push!(mc.workdone_last,0)
 	push!(mc.time_elapsed_cumulative,0)
+	mc.graph = graph(mc.steps, mc)
 	@assert length(mc.steps)==length(mc.workdone_cumulative)==length(mc.workdone_last)==length(mc.time_elapsed_cumulative) "These things always have to have the same length"
 end
 
