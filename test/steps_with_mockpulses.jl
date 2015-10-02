@@ -31,9 +31,7 @@ push!(steps, HistogramStep(update_histogram!, [:energy_hist, :selection_good, :e
 
 
 mc=MassChannel()
-push!(mc.perpulse_symbols, :filt_value, :selection_good, :energy, :pulse, :rowstamp,
-	:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
-	:peak_index, :peak_value, :min_value, :selection_good, :filt_value_dc)
+
 mc[:pretrig_mean] = RunningVector(Float64)
 mc[:pretrig_rms] = RunningVector(Float64)
 mc[:pulse_average] = RunningVector(Float64)

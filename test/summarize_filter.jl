@@ -9,9 +9,7 @@ function setup_channel(ljh_filename, noise_filename)
 	ljh = LJHGroup(ljh_filename)
 
 	mc=MassChannel()
-	push!(mc.perpulse_symbols, :filt_value, :filt_value_dc, :selection_good, :pulse, :rowcount,
-		:pretrig_mean, :pretrig_rms, :pulse_average, :pulse_rms, :rise_time, :postpeak_deriv,
-		:peak_index, :peak_value, :min_value, :selection_good, :filt_phase, :energy, :timestamp_posix_usec)
+
 	mc[:pretrig_mean] = RunningVector(Float32)
 	mc[:pretrig_rms] = RunningVector(Float32)
 	mc[:pulse_average] = RunningVector(Float32)
@@ -25,13 +23,14 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:filt_value_dc] = RunningVector(Float32)
 	mc[:filt_phase] = RunningVector(Float32)
 	mc[:energy] = RunningVector(Float32)
+	mc[:pulse] = RunningVector(Vector{UInt16})
+	mc[:rowcount] = RunningVector(Int)
+	mc[:timestamp_posix_usec] = RunningVector(Int)
 	mc[:selection_good] = RunningSumBitVector()
 	mc[:filt_value_hist] = Histogram(0:1:20000)
 	mc[:filt_value_dc_hist] = Histogram(0:1:20000)
 	mc[:energy_hist] = Histogram(0:1:20000)
-	mc[:pulse] = RunningVector(Vector{UInt16})
-	mc[:rowcount] = RunningVector(Int)
-	mc[:timestamp_posix_usec] = RunningVector(Int)
+
 	mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
 	mc[:samples_per_record] = LJH.record_nsamples(ljh)
 	mc[:frametime] = LJH.frametime(ljh)

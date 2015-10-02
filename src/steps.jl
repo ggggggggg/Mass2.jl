@@ -129,7 +129,6 @@ function debug(s::AbstractStep, c::MassChannel)
 	end
 end
 
-
 # placeholder versions of exists, probably would use Nullable types here
 function dostep!(s::PerPulseStep,c::MassChannel)
 	f = getfunction(s)
@@ -472,6 +471,24 @@ workstat(n, s::HistogramStep, t) = "HistogramStep:$(inputs(s)[1]) "*@sprintf("%0
 workstat(n, s::ThresholdStep, t) = "ThresholdStep:$(graphlabel(s)) $n executions at "*@sprintf("%0.2f executions/s",n/t)
 workstat(n, s::FreeMemoryStep, t) = "FreeMemoryStep $n executions at "*@sprintf("%0.2f executions/s",n/t)
 
+#functions for analyings a vector/graph of steps to learn things such as:
+# 1) list of perpulse_symbols
+# 2) are there any required inputs that do not exist and will never exist? these must be pre-initialized or throw error
+"Used to calculate which symbols must be perpulse_outputs. As of the first writing, this is
+simply all of the outputs from `PerPulseStep`, `GetPulsesStep`, and `MockPulsesStep`."
+perpulse_outputs_for_sure(s::Union{PerPulseStep, GetPulsesStep, MockPulsesStep}) = outputs(s)
+perpulse_outputs_for_sure(s::AbstractStep) = AbstractStep[]
+function perpulse_outputs_for_sure(steps::Vector{AbstractStep})
+		perpulse_symbols = Set{Symbol}()
+		for step in steps
+			for o in perpulse_outputs_for_sure(step)
+				o in perpulse_symbols && error("each perpulse symbol should only be an output of one step")
+				push!(perpulse_symbols, o)
+			end
+		end
+		perpulse_symbols
+	end
+
 
 # ## functions for repetetivley running many steps in a MassChannel
 """ Write an hdf5 dataset with name `clean_exit_posix_timestamp_s` to mc[:hdf5_filename].
@@ -512,20 +529,27 @@ function preptasks!(mc::MassChannel)
 	mc.waittask = Nullable(@schedule try wait(mc.task) catch ex isa(ex, InterruptException) && throw(ex) end) # suppress printing of error message
 	mc.endertask = Nullable(@task end_when_all_steps_do_no_work(mc.workdone_last, mc.exitchannel, mc.task.value))
 end
-
+"""Set `mc.steps=steps` and take care of housecleaning to make sure everything else makes sense. This at least
+initializes `workdone_cumulative`, `workdone_last`, `time_elapsed_cumulative` to zero values and
+calculates `perpulse_symbols` and `graph`."""
 function setsteps!(mc::MassChannel, steps::Vector{AbstractStep})
 	@assert length(mc.steps)==0 "using setsteps! on a MassChannel that already has steps seems like a bad idea, try addstep!"
 	mc.steps = steps
+	mc.perpulse_symbols = perpulse_outputs_for_sure(mc.steps)
 	mc.graph = graph(mc.steps, mc)
 	mc.workdone_cumulative = zeros(Int, length(steps))
 	mc.workdone_last = zeros(Int, length(steps))
 	mc.time_elapsed_cumulative = zeros(Float64, length(steps))
 end
+"""Add a step to  `mc.steps=steps` and take care of housecleaning to make sure everything else makes sense. This at least
+adds new fields with 0 value to `workdone_cumulative`, `workdone_last`, `time_elapsed_cumulative` and
+calculates `perpulse_symbols` and `graph`."""
 function addstep!(mc::MassChannel, step::AbstractStep)
 	push!(mc.steps,step)
 	push!(mc.workdone_cumulative,0)
 	push!(mc.workdone_last,0)
 	push!(mc.time_elapsed_cumulative,0)
+	mc.perpulse_symbols = perpulse_outputs_for_sure(mc.steps)
 	mc.graph = graph(mc.steps, mc)
 	@assert length(mc.steps)==length(mc.workdone_cumulative)==length(mc.workdone_last)==length(mc.time_elapsed_cumulative) "These things always have to have the same length"
 end
