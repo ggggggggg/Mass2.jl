@@ -388,11 +388,32 @@ end
 Generate a directed graph representing the steps in `steps`. You must pass
 `c` to allow it to figure out which things are per_pulse and which aren't."
 function graph(steps::Vector{AbstractStep},c::MassChannel)
-	g=Graphs.inclist(Graphs.ExVertex, is_directed=true)
+	oldg=Graphs.inclist(Graphs.ExVertex, is_directed=true)
 	for i in eachindex(steps)
-    	add_step!(g,c,i)
+    	add_step!(oldg,c,i)
 	end
+	# graph is a type with a larger and more convenient API
+	# I should have constructed it directly, but I didn't know about it, so
+	# I'm just going to construct it from oldg for now
+	g = Graphs.graph(Graphs.vertices(oldg),vcat(oldg.inclist...),is_directed=true)
 	g
+end
+function checkforunuseddata(g::Graphs.AbstractGraph)
+	verts = Graphs.vertices(g)
+	for v in verts
+		contains(v.attributes["type"],"data") || continue # only check for unused data, not functions or other verticies
+		if isempty(Graphs.out_neighbors(v,g)) && isempty(Graphs.in_neighbors(v,g))
+			error("vertex $v is a data vertex that is unused")
+		end
+	end
+end
+function warn_of_cycles(g)
+	verts = Graphs.vertices(g)
+	for v in verts
+		visited = Graphs.visited_vertices(g,Graphs.BreadthFirst(),v)
+		length(visited)<=1 && continue
+		v in visited[2:end] && println("cycle containing $v")
+	end
 end
 function savegraph(fname,g)
 	dot = Graphs.to_dot(g)
@@ -546,10 +567,18 @@ function setsteps!(mc::MassChannel, steps::Vector{AbstractStep})
 	@assert length(mc.steps)==0 "using setsteps! on a MassChannel that already has steps seems like a bad idea, try addstep!"
 	mc.steps = steps
 	mc.perpulse_symbols = perpulse_outputs_for_sure(mc.steps)
-	mc.graph = graph(mc.steps, mc)
+	updateandverifygraph(mc)
 	mc.workdone_cumulative = zeros(Int, length(steps))
 	mc.workdone_last = zeros(Int, length(steps))
 	mc.time_elapsed_cumulative = zeros(Float64, length(steps))
+end
+function updateandverifygraph(mc::MassChannel)
+	mc.graph = graph(mc.steps,mc)
+	if Graphs.test_cyclic_by_dfs(mc.graph)
+		warn_of_cycles(mc.graph)
+		error("graph contains cycle, it shouldn't")
+	end
+	checkforunuseddata(mc.graph)
 end
 """Add a step to  `mc.steps=steps` and take care of housecleaning to make sure everything else makes sense. This at least
 adds new fields with 0 value to `workdone_cumulative`, `workdone_last`, `time_elapsed_cumulative` and
@@ -560,7 +589,7 @@ function addstep!(mc::MassChannel, step::AbstractStep)
 	push!(mc.workdone_last,0)
 	push!(mc.time_elapsed_cumulative,0)
 	mc.perpulse_symbols = perpulse_outputs_for_sure(mc.steps)
-	mc.graph = graph(mc.steps, mc)
+	updateandverifygraph(mc)
 	@assert length(mc.steps)==length(mc.workdone_cumulative)==length(mc.workdone_last)==length(mc.time_elapsed_cumulative) "These things always have to have the same length"
 end
 
