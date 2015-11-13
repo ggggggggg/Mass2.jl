@@ -41,9 +41,6 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:known_energies] = [5898.801,6490.59] # FeKAlpha and FeKBeta
 
 	#metadata
-	mc[:workdone_cumulative] = Dict{AbstractStep, Int64}()
-	mc[:time_elapsed_cumulative] = Dict{AbstractStep, Float64}()
-	mc[:workdone_last] = Dict{AbstractStep, Int64}()
 	mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
 	mc[:noise_filename]=noise_filename

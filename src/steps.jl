@@ -11,6 +11,7 @@ type MassChannel
 	# workdone_cumulative[i] represents how much work steps[i] has done
 	# same idea for time_elapsed_cumulative and workdone_last
 	steps::Vector{AbstractStep}
+	nextstepind::Int #used for debugging, tells which step it crashed on
 	workdone_cumulative::Vector{Int}
 	time_elapsed_cumulative::Vector{Float64}
 	workdone_last::Vector{Int}
@@ -23,7 +24,7 @@ type MassChannel
 	graph
 end
 "Create an empty MassChannel"
-MassChannel() = MassChannel(Dict{Symbol,Any}(),Array{AbstractStep}(0),Vector{Int}(),Vector{Int}(),Vector{Int}(),
+MassChannel() = MassChannel(Dict{Symbol,Any}(),Array{AbstractStep}(0),0,Vector{Int}(),Vector{Int}(),Vector{Int}(),
   							Set{Symbol}(), Nullable{Task}(), Nullable{Task}(), Nullable{Task}(),Channel{Int}(1), (mc)->nothing, nothing)
 # delegate a few functions to the dict d, to enable mc[:pulse] = blah
 for f in (:keys, :length, :values)
@@ -152,10 +153,9 @@ function dostep!(s::PerPulseStep,c::MassChannel)
 	r
 end
 
-#HistogramStep really has intputs, other_inputs, and inplace inputs (the histogram, though I guess it could be something else)
-#For now we're just going to say it has no outputs, which is not totally innacurate, though one might want to say the
-# in place input is the output
-outputs(s::HistogramStep) = s.outputs
+# HistogramStep outputs should contain 1 symbol which points to a Histogram
+# the dostep function will use this as both the first input, and the output
+Base.range(s::AbstractStep, c::MassChannel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
@@ -173,7 +173,10 @@ function dostep!(s::HistogramStep, c::MassChannel)
 	f = getfunction(s)
 	r = range(s,c)
 	other_inputs_exist(s,c) || (return last(r):-1)
-	fout = f(inputs(s,c,r)...) # it doesn't know the types here, tho f will, also I could write a macro so it knew types
+	histogram = outputs(s,c)[1]
+	inps = inputs(s,c,r)
+	finps = (histogram, inps...)
+	fout = f(finps...) # it doesn't know the types here, tho f will, also I could write a macro so it knew types
 	r
 end
 
@@ -183,7 +186,6 @@ function dostep!(s::ThresholdStep, c::MassChannel)
 	n_other = mindonethru(perpulse_outputs(s,c))
 	n = s.to_watch_func(c[s.to_watch])
 	if n >= s.threshold && n_other >= s.threshold
-		s.do_if_able = false
 		f = getfunction(s)
 		r=1:s.threshold
 		fout = f(inputs(s,c,r)...)
@@ -195,6 +197,7 @@ function dostep!(s::ThresholdStep, c::MassChannel)
 				c[output_key]=single_output
 			end
 		end
+		s.do_if_able = false
 		return true
 	else
 		return false
@@ -357,8 +360,12 @@ function Graphs.add_edge!(g,label1, label2)
     end
     add_edge!(g, verts[i1], verts[i2])
 end
-function add_step!(g, s::AbstractStep, c::MassChannel)
-    vf = add_func!(g,graphlabel(s))
+function add_step!(g, c::MassChannel,stepind::Int)
+		stepind
+		s = c.steps[stepind]
+		# prepend the step index to each label to make sure different
+		# steps have different verticies even if they call the same funcion
+    vf = add_func!(g,"$stepind "*graphlabel(s))
     for p in perpulse_inputs_key(s,c)
         v=add_perpulse_data!(g,p)
         Graphs.add_edge!(g,v,vf)
@@ -382,8 +389,8 @@ Generate a directed graph representing the steps in `steps`. You must pass
 `c` to allow it to figure out which things are per_pulse and which aren't."
 function graph(steps::Vector{AbstractStep},c::MassChannel)
 	g=Graphs.inclist(Graphs.ExVertex, is_directed=true)
-	for s in steps
-    	add_step!(g,s,c)
+	for i in eachindex(steps)
+    	add_step!(g,c,i)
 	end
 	g
 end
@@ -415,10 +422,12 @@ earliest_needed_index(x) = donethru(x)+1
 Internal function, don't call directly. Returns the earliest needed index
 for `mc[q]`, or `mc[p]` if `q=:to_disk`."
 function earliest_needed_index(mc::MassChannel,q::Symbol,p::Symbol)
-	if q in keys(mc)
-		return earliest_needed_index(mc[q])
-	elseif q==:to_disk
+	if q==:to_disk
 		return donethru_jld(mc::MassChannel,q,p)+1
+	elseif q in keys(mc)
+			return earliest_needed_index(mc[q])
+	else
+		return 1 # if the item doesn't exist yet, it needs access to the first pulse
 	end
 end
 function donethru_jld(c::MassChannel,q::Symbol,p::Symbol)
@@ -438,7 +447,7 @@ function earliest_needed_index(mc::MassChannel, parent::Symbol, g::Graphs.Abstra
 	next_neighbor_vertices = graph_out_next_neighbors(v,g)
 	children_sym = [symbol(label(u)) for u in next_neighbor_vertices]
 	eni = [earliest_needed_index(mc,q,parent) for q in children_sym]
-	# println([(q,earliest_needed_index(c,q,parent)) for q in children_sym])
+	#println([(q,parent,earliest_needed_index(mc,q,parent)) for q in children_sym])
 	filter!(x->x != nothing, eni)
 	isempty(eni)?length(mc[parent])+1:minimum(eni)
 end
@@ -507,6 +516,7 @@ function repeatsteps!(mc::MassChannel)
 	while !isready(mc.exitchannel)
 		for (i,s) in enumerate(mc.steps)
 			yield()
+			mc.nextstepind=i
 			time_elapsed = @elapsed workdone = workunits(dostep!(s,mc))
 			mc.workdone_cumulative[i]+=workdone
 			mc.time_elapsed_cumulative[i]+=time_elapsed

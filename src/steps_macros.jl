@@ -48,12 +48,12 @@ macro threshold(expr, when, condition)
 end
 """ Accepts something like
 @histogram update_histogram!(filt_value_hist, selection_good, filt_value)
-Converts it to HistogramStep(update_histogram!, [:filt_value_hist, :selection_good, :filt_value], [:filt_value_hist])
+Converts it to HistogramStep(update_histogram!, [:selection_good, :filt_value], [:filt_value_hist])
 """
 macro histogram(expr)
     f = expr.args[1]
     args = expr.args[2:end]
     quote
-        HistogramStep($f, $args, $(args[1:1]))
+        HistogramStep($f, $(args[2:end]), $(args[1:1]))
     end
 end
