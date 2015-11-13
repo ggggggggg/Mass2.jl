@@ -46,7 +46,7 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:noise_filename]=noise_filename
 	mc[:ljh_filename]=ljh_filename
 	mc[:name] = "summarize and filter test"
-	mc[:hdf5_filename] = "$(splitext(ljh_filename)[1]).hdf5"
+	mc[:hdf5_filename] = "$(splitext(ljh_filename)[1])_jl.hdf5"
 	mc[:oncleanfinish] = markhdf5oncleanfinish
 	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
@@ -108,7 +108,7 @@ function MASS_MATTER_watcher(masschannels, exitchannel)
 				info("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
 				channums = LJHUtil.allchannels(ljhname)
-				channums = channums[1:min(1, length(channums))]
+				channums = channums[1:min(4, length(channums))]
 				ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.fnames(last_noise_filename,channum) for channum in channums]
 				for i in eachindex(channums)
