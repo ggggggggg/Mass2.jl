@@ -166,5 +166,9 @@ mc=masschannels[13];
 
 wait(mc.task.value)
 @assert mc.task.value.state == :done
-
-	a=4
+@assert seen(mc[:energy_hist])==length(mc[:selection_good])
+@assert seen(mc[:filt_value_hist])==length(mc[:selection_good])
+@assert seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])
+@assert 0.8*sum(mc[:selection_good])<counted(mc[:energy_hist])<sum(mc[:selection_good])
+@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_hist])<sum(mc[:selection_good])
+@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_dc_hist])<sum(mc[:selection_good])

@@ -155,19 +155,13 @@ end
 
 # HistogramStep outputs should contain 1 symbol which points to a Histogram
 # the dostep function will use this as both the first input, and the output
-Base.range(s::AbstractStep, c::MassChannel) = 1+mindonethru(perpulse_outputs(s,c)):mindonethru(perpulse_inputs(s,c))
+Base.range(s::HistogramStep, c::MassChannel) = 1+mindonethru(outputs(s,c)):mindonethru(perpulse_inputs(s,c))
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
 		push!(out, isa(inp,Histogram)?inp:inp[r])
 	end
 	out
-end
-function Base.range(s::HistogramStep, c::MassChannel)
-	# for now I'm conflating the idea of per_pulse and histogram on inputs
-	start = mindonethru(other_inputs(s,c))+1
-	stop = mindonethru(perpulse_inputs(s,c))
-	start:stop
 end
 function dostep!(s::HistogramStep, c::MassChannel)
 	f = getfunction(s)
@@ -572,6 +566,8 @@ function setsteps!(mc::MassChannel, steps::Vector{AbstractStep})
 	mc.workdone_last = zeros(Int, length(steps))
 	mc.time_elapsed_cumulative = zeros(Float64, length(steps))
 end
+"""Update `mc.graph` and check for obvious problems. Looks for cycles in the graph, and
+looks for totally disconnected data."""
 function updateandverifygraph(mc::MassChannel)
 	mc.graph = graph(mc.steps,mc)
 	if Graphs.test_cyclic_by_dfs(mc.graph)
