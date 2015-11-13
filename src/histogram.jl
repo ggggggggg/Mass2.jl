@@ -38,6 +38,8 @@ counts(h::Histogram) = h.counts
 counted(h::Histogram) = h.counted
 """misses(h::Histogram) Return the number of events whose value is outside all bins of `h`."""
 misses(h::Histogram) = h.seen-counted(h)
+"""seen(h::Histogram) Return the number of events seen, counted plus misses."""
+seen(h::Histogram) = h.seen
 donethru(h::Histogram) = h.seen
 """update_histogram!(h::Histogram, selection, x)
 Add events to `h` whose values are in `x`. Only add events for which `selection` (a bit vector or Vector{Bool}) is true. Add
