@@ -3,9 +3,9 @@
 and to enable compatiblity with Python Mass."""
 module LJHUtil
 
-function split(ljhname::AbstractString)
+function ljhsplit(ljhname::AbstractString)
     if isdir(ljhname)
-        dname = ljhname
+        dname = dirname(ljhname) # removes trailing /
         bname = last(split(dname,'/'))
         return dname, bname, ".ljh"
     end
@@ -19,26 +19,26 @@ function channel(ljhname::AbstractString)
     m == nothing ? -1 : parse(Int,m.captures[1])
 end
 function fnames(ljhname::AbstractString, chans)
-    dname, bname, ext = split(ljhname)
+    dname, bname, ext = ljhsplit(ljhname)
     [joinpath(dname, "$(bname)_chan$c$ext") for c in chans]
 end
 function fnames(ljhname::AbstractString, c::Int)
-    dname, bname, ext = split(ljhname)
+    dname, bname, ext = ljhsplit(ljhname)
     joinpath(dname, "$(bname)_chan$c$ext")
 end
 function allchannels(ljhname::AbstractString)
-    dname, bname, ext = split(ljhname)
+    dname, bname, ext = ljhsplit(ljhname)
     potential_ljh = filter!(s->(startswith(s,bname)), readdir(dname))
     channels = filter!(x->x>=0,[channel(p) for p in filter!(s->startswith(s,bname),readdir(dname))])
     sort!(unique(channels))
 end
 ljhall(ljhname::AbstractString) = ljhfnames(ljhname, ljhallchannels(ljhname))
 function hdf5_name_from_ljh(ljhnames::AbstractString...)
-	dname, bname, ext = split(ljhnames[1])
+	dname, bname, ext = ljhsplit(ljhnames[1])
 	fname = prod([split(f)[2] for f in ljhnames])
 	joinpath(dname,hdf5_name_from_ljh(fname))
 end
-hdf5_name_from_ljh(ljhname::AbstractString) = joinpath(split(ljhname)...)*"_mass.hdf5"
+hdf5_name_from_ljh(ljhname::AbstractString) = joinpath(ljhsplit(ljhname)...)*"_mass.hdf5"
 
 # returns (AbstractString, Bool) representing (filename, currently_open?)
 const sentinel_file_path = joinpath(expanduser("~"),".daq","latest_ljh_pulse.cur")
