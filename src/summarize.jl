@@ -8,7 +8,7 @@ type PulseSummaries
     rise_time         ::Vector{Float64}
     postpeak_deriv    ::Vector{Float64}
     timestamp         ::Vector{Float64}
-    peak_index        ::Vector{UInt16}
+    peak_index        ::Vector{Int16}
     peak_value        ::Vector{UInt16}
     min_value         ::Vector{UInt16}
 
@@ -21,7 +21,7 @@ type PulseSummaries
         rise_time = Array(Float64, n)
         postpeak_deriv = Array(Float64, n)
         timestamp = Array(Float64, n)
-        peak_index = Array(UInt16, n)
+        peak_index = Array(Int16, n)
         peak_value = Array(UInt16, n)
         min_value = Array(UInt16, n)
 
@@ -71,15 +71,15 @@ function compute_summary(pulseiterator, Npre, frame_time)
             s2+=d*d
         end
 
-        posttrig_data = view(data,Npre:Nsamp)
-        rise_time::Float64, deriv_start = estimate_rise_time(posttrig_data, peak_idx+Npre,
+        rise_time::Float64 = estimate_rise_time(data, Npre+1:peak_idx,
                                        peak_val, ptm, frame_time)
 
-        postpeak_data = view(data, deriv_start+Npre:Nsamp)
+        postpeak_data = view(data, peak_idx:Nsamp)
         postpeak_deriv = max_timeseries_deriv_simple(postpeak_data)
 
         # Copy results into the PulseSummaries object
         summary.pulse_average[p] = s/Npost-ptm
+        summary.pulse_rms[p] = sqrt(abs(s2/Npost - ptm*(ptm+2*summary.pulse_average[p])))
         summary.pulse_rms[p] = sqrt(abs(s2/Npost - ptm*(ptm+2*summary.pulse_average[p])))
         summary.rise_time[p] = rise_time
         summary.postpeak_deriv[p] = postpeak_deriv
@@ -97,23 +97,35 @@ function compute_summary(pulseiterator, Npre, frame_time)
 	summary.peak_index, summary.peak_value, summary.min_value)
 end
 
-function estimate_rise_time(pulserecord, peakindex::Integer,peakval,ptm,frametime)
-    idx10 = 1
-    (peakindex > length(pulserecord) || peakindex < 1) && (peakindex = length(pulserecord))
+"estimate_rise_time(pulserecord, searchrange, peakval, ptm, frametime)
+pulserecord = Vector
+searchrange = range to look for risetime in, should go from base of pulse to peak, last(searchrange) is peakindex
+peakval = maximum(pulserecord[postrig_region], has not had ptm subtracted off)
+ptm = pretrigger mean
+framtime = time spacing between points"
+function estimate_rise_time(pulserecord, searchrange, peakval,ptm,frametime)
+    idx10 = first(searchrange)
+    peakindex = last(searchrange)
+    (peakindex > length(pulserecord) || length(searchrange)==0) && (return length(pulserecord))
 
     idx90 = peakindex
     thresh10 = 0.1*(peakval-ptm)+ptm
     thresh90 = 0.9*(peakval-ptm)+ptm
+    j=0 # to make j exist after the for loop
     for j = 1:peakindex
-        pulserecord[j] < thresh10 && (idx10 = j)
-        if pulserecord[j] > thresh90
-            (idx90 = j-1)
+        if pulserecord[j] > thresh10
+            idx10 = j-1
             break
         end
     end
-    dt = (idx90-idx10)*frametime
-    rise_time = dt * (peakval-ptm) / (pulserecord[idx90]-pulserecord[idx10])
-    rise_time, idx90+(idx90-idx10) # 2nd return is estimate of peak location
+    for j = j+1:peakindex
+        if pulserecord[j] > thresh90
+            idx90 = j-1
+            break
+        end
+    end
+    rise_time = (idx90-idx10)*frametime
+    rise_time
 end
 
 # Estimate the derivative (units of arbs / sample) for a pulse record or other timeseries.
