@@ -38,30 +38,37 @@ function hdf5_name_from_ljh(ljhnames::AbstractString...)
 	fname = prod([split(f)[2] for f in ljhnames])
 	joinpath(dname,hdf5_name_from_ljh(fname))
 end
-hdf5_name_from_ljh(ljhname::AbstractString) = joinpath(ljhsplit(ljhname)...)*"_mass.hdf5"
+hdf5_name_from_ljh(ljhname::AbstractString) = ljhname*"_mass2.hdf5"
 
-# returns (AbstractString, Bool) representing (filename, currently_open?)
 const sentinel_file_path = joinpath(expanduser("~"),".daq","latest_ljh_pulse.cur")
+"matter_writing_status() returns (AbstractString, Bool) representing (filename, currently_open?)"
 function matter_writing_status()
     isfile(sentinel_file_path) || error("$(sentinel_file_path) must be a file")
     open(sentinel_file_path,"r") do sentinel_file
     lines = map(chomp,collect(eachline(sentinel_file)))
-    return lines[1], length(lines)==1 # the sentinel file has a second line that says closed when it has closed a file
+    return lines[1], length(lines)==1 
+	# the sentinel file has a second line that says closed when it has closed a file
+	# so one line means open, two lines means closed
     end
 end
 
+"MATTER writes it's writing status to a sentinal file, this emulates matters output for testing purposes.
+write_sentinel_file(filename, writingbool), if writingbool is true, it writes that the file is still open"
 function write_sentinel_file(filename, writingbool)
     open(sentinel_file_path,"w") do sentinel_file
         println(sentinel_file,filename)
-        if writingbool == true
+        if !writingbool
             println(sentinel_file, "closed")
         end
     end
 end
 
+"Change the sentinel_file writing status, false->true or true->false."
 function change_writing_status()
     fname, writingbool = matter_writing_status()
     write_sentinel_file(fname, !writingbool)
 end
+
+
 
 end # module

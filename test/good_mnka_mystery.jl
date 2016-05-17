@@ -85,53 +85,7 @@ function setup_channel(ljh_filename, noise_filename)
 end
 
 
-function MASS_MATTER_watcher(masschannels, exitchannel)
-	ljhname, writingbool = "",false
-	last_noise_filename = ""
-	analyzing_fname = "__"
-	while true
-		watch_file(LJHUtil.sentinel_file_path,10) #blocks task until file changes
-		oldljhname, oldwritingbool = ljhname, writingbool
-		ljhname, writingbool = LJHUtil.matter_writing_status()
-		if ljhname != oldljhname
-			if oldljhname == analyzing_fname # stop tasks for previous file once they've finished their work
-				info("allowing analysis tasks for $oldljhname to end")
-				map(plantoend, values(masschannels))
-				analyzing_fname=""
-			end
-			if contains(ljhname, "noise") || contains(ljhname,".noi")
-				last_noise_filename = ljhname
-				info("New noise file $last_noise_filename")
-			else
-				last_noise_filename == "" && error("must set last_noise_filename before processing data")
-				analyzing_fname = ljhname
-				info("Starting analysis of $ljhname with noise from $last_noise_filename")
-				t0 = time()
-				channums = LJHUtil.allchannels(ljhname)
-				channums = channums[1:min(4, length(channums))]
-				ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]
-				noise_filenames = [LJHUtil.fnames(last_noise_filename,channum) for channum in channums]
-				for i in eachindex(channums)
-					masschannels[channums[i]] = setup_channel(ljh_filenames[i], noise_filenames[i])
-				end
-				tf = time()
-				info("setup $(length(channums)) channels in $(tf-t0) seconds")
-				tschedule = @elapsed map(schedule, values(masschannels))
-				info("launched $(length(channums)) channels in $tschedule seconds")
-			end
-		end
-		isready(exitchannel) && return
-	end
-end
-
-function schedule_MASS_MATTER_watcher()
-	masschannels = Dict()
-	exitchannel = Channel{Int}(1)
-	task = @schedule MASS_MATTER_watcher(masschannels, exitchannel)
-	masschannels, exitchannel, task
-end
-
-masschannels, watcher_exitchannel, watcher_task = schedule_MASS_MATTER_watcher()
+masschannels, watcher_exitchannel, watcher_task = schedule_MATTER_watcher(setup_channel,1)
 
 rmf = ReferenceMicrocalFiles.dict["good_mnka_mystery"]
 
