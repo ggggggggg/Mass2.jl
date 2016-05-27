@@ -71,6 +71,11 @@ type MockPulsesStep <: AbstractStep
 	max_pulses_ever::Int
 	outputs::Vector{Symbol}
 end
+type FromHDF5Step <: AbstractStep # used to popuplate the mc dictionary with items from a jld/hdf5 file
+	inputs::Vector{Symbol}
+	one_time_inputs::Vector{Pair{Symbol, ASCIIString}}
+	hdf5filename::AbstractString
+end
 type FreeMemoryStep <: AbstractStep
 end
 isperpulse(q::Symbol, c::MassChannel) = q in c.perpulse_symbols
@@ -156,10 +161,11 @@ end
 # HistogramStep outputs should contain 1 symbol which points to a Histogram
 # the dostep function will use this as both the first input, and the output
 Base.range(s::HistogramStep, c::MassChannel) = 1+mindonethru(outputs(s,c)):mindonethru(perpulse_inputs(s,c))
+HistogramStepExemptTypes = [Int, Histogram]
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
-		push!(out, isa(inp,Histogram)?inp:inp[r])
+		push!(out, typeof(inp) in HistogramStepExemptTypes ? inp : inp[r])
 	end
 	out
 end
@@ -170,8 +176,9 @@ function dostep!(s::HistogramStep, c::MassChannel)
 	histogram = outputs(s,c)[1]
 	inps = inputs(s,c,r)
 	finps = (histogram, inps...)
+	donethru_before = donethru(histogram)
 	fout = f(finps...) # it doesn't know the types here, tho f will, also I could write a macro so it knew types
-	r
+	workdone = donethru(histogram)-donethru_before
 end
 
 function dostep!(s::ThresholdStep, c::MassChannel)
@@ -231,12 +238,20 @@ type GetPulsesStep{T} <: AbstractStep
 	outputs::Vector{Symbol}
 	previous_pulse_index::Int # used to keep track of location in an ljh file for example
 	max_pulses_per_step::Int
+	last_timestamp_checked::Int
 end
+GetPulsesStep(a,b,c,d) = GetPulsesStep(a,b,c,d,0)
 inputs(s::GetPulsesStep) = Symbol[]
+posix_time() = convert(Int, time()*1000000)
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
 	pulses, rowcounts, timestamps = get_data_rowcount_timestamp(s.pulse_source[r])
+	if last(r) == length(s.pulse_source) # determine when was the latest time this would have reported a pulse from
+		s.last_timestamp_checked = posix_time()
+	else
+		s.last_timestamp_checked = last(timestamps)
+	end
 	pulses_out, rowcounts_out, timestamps_out = perpulse_outputs(s,c)
 	append!(pulses_out, pulses)
 	assert(length(pulses_out)==last(r))
@@ -306,8 +321,28 @@ function dostep!(s::ToJLDStep,c::MassChannel)
 	# 	# warn("doesn't work if you do it more than once")
 	# 	# update!(jld, string(sym), value)
 	# end
-	n_written # return workunits info
+	n_written # return workunits
 end #dostep!
+
+# FromHDF5Step
+graphlabel(s::FromHDF5Step) = "from HDF5"
+outputs(s::FromHDF5Step) = [sym for (sym, path) in s.one_time_inputs]
+function dostep!(s::FromHDF5Step, c::MassChannel)
+	n_gotten = 0
+	!isfile(s.hdf5filename) && (return 0)
+	h5open(s.hdf5filename, "r") do h5
+		for (sym, value) in zip(perpulse_inputs_key(s,c),perpulse_inputs(s,c))
+			error("perpulse inputs not yet support in FromHDF5Step")
+		end
+		for (sym, path) in s.one_time_inputs
+			has(h5, path) || continue # if the path doesn't exist in the hdf5 file, move one
+			haskey(c,sym) && continue # if the symbol already exists in the masschannel dict, move on
+			c[sym] = read(h5[path])
+			n_gotten+=1
+		end
+	end
+		n_gotten
+end
 
 default_vertex_attrs = Graphs.AttributeDict()
 default_vertex_attrs["fontsize"]=18.0
@@ -601,3 +636,9 @@ end
 
 Base.schedule(mc::MassChannel) = schedule(mc.task.value)
 plantoend(mc::MassChannel) = schedule(mc.endertask.value) # need the .value since I'm using Nullable tasks
+function debug(mc)
+	println("failed on step index $(mc.nextstepind)")
+	debug(mc.steps[mc.nextstepind], mc)
+	println("**** now trying to execute the failed step")
+	dostep!(mc.steps[mc.nextstepind], mc)
+end

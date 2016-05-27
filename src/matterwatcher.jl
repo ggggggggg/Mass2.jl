@@ -1,6 +1,6 @@
 "Use schedule_MATTER_watcher to launch in a task"
 function MATTER_watcher(masschannels, exitchannel, setup_channel_func, maxchannels)
-	println("starting MATTER_watcher")	
+	println("starting MATTER_watcher")
 	ljhname, writingbool = "",false
 	last_noise_filename = ""
 	last_started_analyzing_fname = "" # not neccesary, but I could see using the info in the future
@@ -44,7 +44,7 @@ function MATTER_watcher(masschannels, exitchannel, setup_channel_func, maxchanne
 			have_planned_to_end=true
 		end
 		if isready(exitchannel)
-			println("exiting MATTER_watcher, due to ready exitchannel")			 
+			println("exiting MATTER_watcher, due to ready exitchannel")
 			return
 		end
 	end
@@ -53,9 +53,9 @@ end
 "masschannels, watcher_exitchannel, watcher_task = schedule_MATTER_watcher(setup_channel_func, maxchannels=1000)
 setup_channel_func(ljh_filename, noise_filename) should be a function that returns a MassChannel designed to analyze those files
 maschannels is an `Int` that limits the maximum number of channels to analyze
-Launches MATTER_watcher in a task. It will monitor sentinel_file_path for changes. It stores the name 
+Launches MATTER_watcher in a task. It will monitor sentinel_file_path for changes. It stores the name
 of files that contain the text `noise` or `.noi` as noise files, then starts analysis on any other files, using
-the last seen noise file as the noise. When writing stops, or when a new file starts being written it 
+the last seen noise file as the noise. When writing stops, or when a new file starts being written it
 plans to end the analysis steps. This means that when all work has finished, the analysis tasks will end.
 masschannels is a dict channel_number->masschannel object for the currently analyzing files
 watcher_exitchannel will cause the MATTER_watcher task to end upon put!(watcher_exitchannel,1) (or any other int)

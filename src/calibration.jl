@@ -13,7 +13,7 @@ end
 iscalibrated(c::AbstractCalibration) = c.iscalibrated
 donethru(c::AbstractCalibration) = iscalibrated(c)?DONETHRU_MAX:0
 apply_calibration(c::CalibrationSpline1D, estimator) = apply_spline(c.spline, estimator)
-function PyPlot.plot(cal::CalibrationSpline1D) 
+function PyPlot.plot(cal::CalibrationSpline1D)
 	figure()
 	plot(cal.indicator, apply_spline(cal.spline, cal.indicator))
 	plot(cal.indicator, cal.known_energies,"o")
@@ -21,7 +21,7 @@ function PyPlot.plot(cal::CalibrationSpline1D)
 	ylabel("energy")
 end
 
-function plotlog(cal::CalibrationSpline1D) 
+function plotlog(cal::CalibrationSpline1D)
 	figure()
 	x=log(cal.indicator)
 	y=log(cal.known_energies)
@@ -36,10 +36,10 @@ end
 
 
 function peakassign(locations_arb, locations_true)
-# locations_arb is an array of possible peak locations in arbitrary units, assumed to have an unknown, 
+# locations_arb is an array of possible peak locations in arbitrary units, assumed to have an unknown,
 # nonlinear (but monotonic and smooth) relationship to locations_true
 # locations_arb may contain more peaks than locations_true, including some spurious peaks
-# the goal is to find the best possible set of assignments for entries in locations_arb to 
+# the goal is to find the best possible set of assignments for entries in locations_arb to
 # correspond to locations_true by examining all possible assignments and calcualting some figure of merit
 @assert(issorted(locations_arb))
 @assert(issorted(locations_true))
@@ -149,6 +149,10 @@ function calibrate_nofit(hist::Histogram, known_energies, n_extra=3)
 	CalibrationSpline1D(best_combo, known_energies)
 end
 
+function calibrate_xy(indicator, known_energies)
+	CalibrationSpline1D(indicator, known_energies)
+end
+
 
 function calc_spline(x,y)
 	spl = Spline1D(float(x),float(y),k=1,bc="extrapolate")
@@ -156,5 +160,3 @@ end
 function apply_spline(spl, energy_estimator)
 	energy = evaluate(spl, energy_estimator)
 end
-
-
