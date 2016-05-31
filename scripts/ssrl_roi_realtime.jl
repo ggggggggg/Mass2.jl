@@ -11,7 +11,6 @@ type CountRateHistogram <: AbstractHistogram
   hists::RunningVector{Histogram}
   x::FloatRange{Float64} # bins of the histograms in hists
 end
-push!(HistogramStepExemptTypes, CountRateHistogram)
 
 "`posix_timestamp_usec_bin_edges` should always start at 0 (this should be an inner constructor?)"
 function CountRateHistogram(posix_timestamp_usec_bin_step,x)
@@ -23,16 +22,20 @@ end
 to the `h`, adding to the appropriate entry in `hists` based on `timestamps`. returns nothing.
 timestamps must be sorted!!"
 function update_histogram!(h::CountRateHistogram, selection, events, timestamps, last_timestamp_checked)
-  last_timestamp_checked = max(last_timestamp_checked, last(timestamps))
   @assert(length(selection)==length(events)==length(timestamps))
+  if length(selection) == 0 # if the input arrays are empty, return early
+    return donethru(h)
+  end
+  last_timestamp_checked = max(last_timestamp_checked, last(timestamps))
+
   j_hi = 0
   while true
-    if length(available(h.hists)) >=1
+    if length(available(h.hists)) >=1 # figure out what timestamp range we're interested in
       i_lo, i_hi = length(h.hists), length(h.hists)+1 # indexes into h.posix_timestamp_usec_bin_edges
     else
       i_range = searchsorted(h.posix_timestamp_usec_bin_edges, first(timestamps))
       i_lo, i_hi = last(i_range), first(i_range)
-      i_lo = i_lo == i_hi ? i_lo-1 : i_lo # if they are eqaul, it means the fist timestamp is exactly equal to h.posix_timestamp_usec_bin_edges[i_hi]
+      i_lo = i_lo == i_hi ? i_lo-1 : i_lo # if they are equal, it means the fist timestamp is exactly equal to h.posix_timestamp_usec_bin_edges[i_hi]
       freeuntil!(h.hists, i_lo)
     end
     i_lo, i_hi
@@ -42,12 +45,14 @@ function update_histogram!(h::CountRateHistogram, selection, events, timestamps,
     end # only add histogram for which we have seen all events
     # t_lo and t_hi are the edges of the time bin to be used for hists[i_hi]
     j_lo = j_hi+1
-    j_hi, t_hi, i_hi, t_hi-timestamps[j_hi+1]
     while j_hi+1 <= length(timestamps) && timestamps[j_hi+1]<=t_hi
       j_hi+=1
     end
-    j_lo, t_lo, timestamps[j_lo]-t_lo
-    @assert(timestamps[j_lo]>t_lo)
+    if j_lo<=j_hi
+      @assert(timestamps[j_lo]>t_lo)
+    else
+      return donethru(h)
+    end
     newhist = Histogram(h.x)
     update_histogram!(newhist, selection[j_lo:j_hi], events[j_lo:j_hi])
     if i_lo in available(h.hists)
@@ -93,7 +98,9 @@ ZMQ.bind(socket, "tcp://*:$port")
 function sendtest()
   ZMQ.send(socket,"test")
 end
-function send_crh(channel_number::Int, crh, i)
+"(channel_number::Int, crh, i) send CountRateHistogram `crh` over a zmq socket with format:
+channel number; bin edges; counts; total counts seen; timestamps of start and end of new observations"
+function send_crh(channel_number::Integer, crh, i)
   h = crh.hists[i]
   # last argument is SNDMORE, if true, it builds up a multipart message
   ZMQ.send(socket, "$channel_number", true)
@@ -102,8 +109,8 @@ function send_crh(channel_number::Int, crh, i)
   ZMQ.send(socket, repr(seen(h)), true)
   ZMQ.send(socket, repr(crh.posix_timestamp_usec_bin_edges[[i-1,i]]))
 end
-function send_and_free_crh(channel_number::Int, crh, i)
-  send_crh(channel_number::Int, crh, i)
+function send_and_free_crh(channel_number::Integer, crh, i)
+  send_crh(channel_number, crh, i)
   freeuntil!(crh.hists,i)
 end
 sub_socket = ZMQ.Socket(context, ZMQ.SUB)
@@ -161,11 +168,11 @@ function setup_channel(ljh_filename, noise_filename)
     mc[:energy_hist] = CountRateHistogram(10_000_000, 0:1:2000)
     mc[:energy_from_pulse_rms_hist] = CountRateHistogram(10_000_000, 0:1:2000)
 
-    mc[:last_timestamp_checked] = 0
-
     mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
     mc[:samples_per_record] = LJH.record_nsamples(ljh)
     mc[:frametime] = LJH.frametime(ljh)
+    mc[:channel_number] = LJH.channel(ljh)
+    mc[:last_timestamp_checked] = 0.0 # this is updated via a total HACK
 
     #metadata
     mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
@@ -175,14 +182,13 @@ function setup_channel(ljh_filename, noise_filename)
     mc[:name] = "summarize and filter test"
     mc[:hdf5_filename] = "$(splitext(ljh_filename)[1])_jl.hdf5"
     mc[:init_hdf5_filename] = "$(splitext(ljh_filename)[1])_init_jl.hdf5"
-    mc[:channel_number] = 1
 
     mc[:oncleanfinish] = markhdf5oncleanfinish
     isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
     steps = AbstractStep[
-    FromHDF5Step([], Pair[:filter=>"filter/filter", :calibration_pretrig_rms_energies=>"calibrations/calibration_pretrig_rms_energies",
-    :calibration_pretrig_rms_pulseheights=>"calibrations/calibration_pretrig_rms_pulseheights",
+    FromHDF5Step([], Pair[:filter=>"filter/filter", :calibration_pulse_rms_energies=>"calibrations/calibration_pulse_rms_energies",
+    :calibration_pulse_rms_pulseheights=>"calibrations/calibration_pulse_rms_pulseheights",
      :calibration_filt_value_energies=>"calibrations/calibration_filt_value_energies",
     :calibration_filt_value_pulseheights=>"calibrations/calibration_filt_value_pulseheights"],
     mc[:init_hdf5_filename])
@@ -190,12 +196,12 @@ function setup_channel(ljh_filename, noise_filename)
     @perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
     @threshold pretrig_rms_criteria, postpeak_deriv_criteria = estimate_pretrig_rms_and_postpeak_deriv_criteria(noise_filename, pretrig_nsamples) when length(pulse) > 100
     @threshold peak_index_criteria = estimate_peak_index_criteria(peak_index) when length(peak_index)>100
-    @threshold calibration_pretrig_rms = calibrate_xy(calibration_pretrig_rms_pulseheights, calibration_pretrig_rms_energies) when length(peak_index)>0
+    @threshold calibration_pulse_rms = calibrate_xy(calibration_pulse_rms_pulseheights, calibration_pulse_rms_energies) when length(peak_index)>0
     @threshold calibration_filt_value = calibrate_xy(calibration_filt_value_pulseheights, calibration_filt_value_energies) when length(peak_index)>0
     @perpulse selection_good = selectfromcriteria(pretrig_rms, pretrig_rms_criteria, peak_index, peak_index_criteria, postpeak_deriv, postpeak_deriv_criteria)
     @perpulse filt_value, filt_phase = filter5lag(filter, pulse)
     @perpulse energy = apply_calibration(calibration_filt_value, filt_value)
-    @perpulse energy_from_pulse_rms = apply_calibration(calibration_pretrig_rms, pulse_rms)
+    @perpulse energy_from_pulse_rms = apply_calibration(calibration_pulse_rms, pulse_rms)
     @histogram update_histogram_send!(filt_value_hist, selection_good, filt_value, timestamp_posix_usec, last_timestamp_checked, channel_number)
     @histogram update_histogram_send!(energy_hist, selection_good, energy, timestamp_posix_usec, last_timestamp_checked, channel_number)
     ToJLDStep([:filt_value, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
@@ -212,12 +218,12 @@ function setup_channel(ljh_filename, noise_filename)
     preptasks!(mc)
     mc
 end
-
+begin
 rmf = ReferenceMicrocalFiles.dict["good_mnka_mystery"]
 mc = setup_channel(rmf.filename, rmf.noise_filename)
 h5open(mc[:init_hdf5_filename],"w") do h5
-  h5["calibrations/calibration_pretrig_rms_energies"] = collect(1:4.0)
-  h5["calibrations/calibration_pretrig_rms_pulseheights"] = collect(1:4.0)*1000
+  h5["calibrations/calibration_pulse_rms_energies"] = collect(1:4.0)
+  h5["calibrations/calibration_pulse_rms_pulseheights"] = collect(1:4.0)*1000
   h5["calibrations/calibration_filt_value_energies"] = collect(1:4.0)
   h5["calibrations/calibration_filt_value_pulseheights"] = collect(1:4.0)*1000
   filter = zeros(mc[:samples_per_record])
@@ -227,3 +233,4 @@ h5open(mc[:init_hdf5_filename],"w") do h5
 schedule(mc)
 sleep(1)
 plantoend(mc)
+end

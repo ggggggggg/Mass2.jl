@@ -161,11 +161,10 @@ end
 # HistogramStep outputs should contain 1 symbol which points to a Histogram
 # the dostep function will use this as both the first input, and the output
 Base.range(s::HistogramStep, c::MassChannel) = 1+mindonethru(outputs(s,c)):mindonethru(perpulse_inputs(s,c))
-HistogramStepExemptTypes = [Int, Histogram]
 function inputs(s::HistogramStep, c::MassChannel, r::Range)
 	out = Any[]
 	for inp in inputs(s,c)
-		push!(out, typeof(inp) in HistogramStepExemptTypes ? inp : inp[r])
+		push!(out, typeof(inp) <: AbstractRunningVector ? inp[r] : inp)
 	end
 	out
 end
@@ -260,6 +259,7 @@ function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	append!(timestamps_out, timestamps)
 	assert(length(timestamps_out)==last(r))
 	s.previous_pulse_index=last(r)
+	c[:last_timestamp_checked]=s.last_timestamp_checked # THIS IS A HACK, FIX IT, SHOULD NOT DIRECTLY SET VARIABLES
 	r
 end
 graphlabel(s::GetPulsesStep) = repr(typeof(s))
