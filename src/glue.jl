@@ -140,11 +140,11 @@ function estimate_pretrig_rms_and_postpeak_deriv_criteria(fname, pretrig_nsample
 
 	postpeak_deriv_max = max(median(postpeak_deriv)+n_std*std(postpeak_deriv), StatsBase.percentile(postpeak_deriv,99))
 	postpeak_deriv_min = median(postpeak_deriv)-n_std*std(postpeak_deriv)
-	(pretrig_rms_min, pretrig_rms_max), (postpeak_deriv_min, postpeak_deriv_max)
+	Float64[pretrig_rms_min, pretrig_rms_max], Float64[postpeak_deriv_min, postpeak_deriv_max]
 end
 
 function estimate_peak_index_criteria(peak_index)
 	mad = mean(abs(peak_index-median(peak_index)))
 	med = median(peak_index)
-	(med-10*mad, med+10*mad)
+	Float64[med-10*mad, med+10*mad]
 end

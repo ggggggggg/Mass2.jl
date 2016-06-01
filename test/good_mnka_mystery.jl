@@ -43,8 +43,8 @@ function setup_channel(ljh_filename, noise_filename)
 	#metadata
 	mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
-	mc[:noise_filename]=noise_filename
-	mc[:ljh_filename]=ljh_filename
+	mc[:noise_filename]=ascii(noise_filename)
+	mc[:ljh_filename]=ascii(ljh_filename) # h5py can't read UFT8String written by julia
 	mc[:name] = "summarize and filter test"
 	mc[:hdf5_filename] = "$(splitext(ljh_filename)[1])_jl.hdf5"
 	mc[:oncleanfinish] = markhdf5oncleanfinish
@@ -69,11 +69,12 @@ function setup_channel(ljh_filename, noise_filename)
 	@histogram update_histogram!(energy_hist, selection_good, energy)
 	@histogram update_histogram!(filt_value_dc_hist, selection_good, filt_value_dc)
 	ToJLDStep([:filt_value, :filt_value_dc, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
-	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
+	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount, :timestamp_posix_usec],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
-	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
+	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename",
+	:peak_index_criteria=>"selection_criteria/peak_index", :pretrig_rms_criteria=>"selection_criteria/pretrig_rms", :postpeak_deriv_criteria=>"selection_criteria/postpeak_deriv"],
 	mc[:hdf5_filename])
 	MemoryLimitStep(Int(4e6)) # throw error if mc uses more than 4 MB
 	FreeMemoryStep()
@@ -118,11 +119,18 @@ end # write to MATTER sentinel file to simulate matter writing various files
 wait(t)
 mc=masschannels[13];
 
-wait(mc.task.value)
-@assert mc.task.value.state == :done
-@assert seen(mc[:energy_hist])==length(mc[:selection_good])
-@assert seen(mc[:filt_value_hist])==length(mc[:selection_good])
-@assert seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:energy_hist])<sum(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_hist])<sum(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_dc_hist])<sum(mc[:selection_good])
+wait(mc)
+@test get(mc.task).state == :done
+@test seen(mc[:energy_hist])==length(mc[:selection_good])
+@test seen(mc[:filt_value_hist])==length(mc[:selection_good])
+@test seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:energy_hist])<sum(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_hist])<sum(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_dc_hist])<sum(mc[:selection_good])
+
+h5open(mc[:hdf5_filename]) do h5
+	@test read(h5["selection_criteria/peak_index"]) == mc[:peak_index_criteria]
+	@test read(h5["selection_criteria/pretrig_rms"]) == mc[:pretrig_rms_criteria]
+	@test read(h5["selection_criteria/postpeak_deriv"]) == mc[:postpeak_deriv_criteria]
+	@test length(h5["filt_value"]) == length(mc[:filt_value])
+end

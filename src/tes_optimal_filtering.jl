@@ -51,7 +51,7 @@ autocorrelation(data::Vector, nlags::Integer, max_excursion=250) = autocorrelati
 "`calculate_filter(pulse_model, noise_autocorr, f_3db, dt)`
 Return filter anf expected variance on pulse height. Filter is rolled off at `f_3db` (hertz) given that the point spacing is `dt` (seconds)"
 function calculate_filter(pulse_model, noise_autocorr, f_3db, dt)
-    M = hcat(pulse_model, ones(Float64, length(pulse_model))) 
+    M = hcat(pulse_model, ones(Float64, length(pulse_model)))
     # M will have 2 columns, or more. 1st column is pulse model. All other columns are
     # the things you want to be insensitive to (like exponentials).
     R = toeplitz(noise_autocorr)
@@ -90,6 +90,8 @@ function filter5lag{T<:Number}(filter, pulse::Vector{T})
     a,b,c = SG_filter*output #quadratic fit to 5 lags
     filt_value = a-b^2/c/4 # peak of quadratic
     filt_phase = -b/c/2 # x location of peak
+    filt_value = isfinite(filt_value) ? filt_value : -1
+    filt_phase = isfinite(filt_phase) ? filt_phase : -10
     filt_value, filt_phase
 end
 function filter5lag{T<:Vector}(filter, pulses::Vector{T})
@@ -106,8 +108,10 @@ function filter5lag{T<:Number}(filter, pulses::Array{T,2})
     for j in 1:size(pulses,2)
         output = [dot(filter[3:end-2],pulses[i:end-5+i,j]) for i=1:5]
         pfit = SG_filter*output
-        filt_values[j] = pfit[1]-pfit[2]^2/4/pfit[3]
-        filt_phases[j] = -pfit[2]/pfit[3]/2
+        filt_value = pfit[1]-pfit[2]^2/4/pfit[3]
+        filt_phase = -pfit[2]/pfit[3]/2
+        filt_values[j] = isfinite(filt_value) ? filt_value : -1
+        filt_phases[j] = isfinite(filt_phase) ? filt_phase : -10
     end
     filt_values, filt_phases
 end
