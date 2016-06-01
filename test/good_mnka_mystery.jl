@@ -69,11 +69,12 @@ function setup_channel(ljh_filename, noise_filename)
 	@histogram update_histogram!(energy_hist, selection_good, energy)
 	@histogram update_histogram!(filt_value_dc_hist, selection_good, filt_value_dc)
 	ToJLDStep([:filt_value, :filt_value_dc, :energy, :filt_phase, :pretrig_rms, :postpeak_deriv, :rise_time, :peak_index,
-	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount],
+	:pretrig_mean, :pulse_average, :pulse_rms, :peak_value, :min_value, :rowcount, :timestamp_posix_usec],
 	Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
-	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
+	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename",
+	:peak_index_criteria=>"selection_criteria/peak_index", :pretrig_rms_criteria=>"selection_criteria/pretrig_rms", :postpeak_deriv_criteria=>"selection_criteria/postpeak_deriv"],
 	mc[:hdf5_filename])
 	MemoryLimitStep(Int(4e6)) # throw error if mc uses more than 4 MB
 	FreeMemoryStep()
@@ -118,8 +119,8 @@ end # write to MATTER sentinel file to simulate matter writing various files
 wait(t)
 mc=masschannels[13];
 
-wait(mc.task.value)
-@assert mc.task.value.state == :done
+wait(mc)
+@assert get(mc.task).state == :done
 @assert seen(mc[:energy_hist])==length(mc[:selection_good])
 @assert seen(mc[:filt_value_hist])==length(mc[:selection_good])
 @assert seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])

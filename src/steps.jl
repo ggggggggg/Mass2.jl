@@ -638,7 +638,10 @@ Base.schedule(mc::MassChannel) = schedule(mc.task.value)
 plantoend(mc::MassChannel) = schedule(mc.endertask.value) # need the .value since I'm using Nullable tasks
 function debug(mc)
 	println("failed on step index $(mc.nextstepind)")
-	debug(mc.steps[mc.nextstepind], mc)
+	debug(mc.nextstepind, mc)
 	println("**** now trying to execute the failed step")
-	dostep!(mc.steps[mc.nextstepind], mc)
+	dostep!(mc.nextstepind, mc)
 end
+dostep!(i, mc::MassChannel) = dostep!(mc.steps[i], mc)
+debug(i, mc::MassChannel) = debug(mc.steps[i], mc)
+Base.wait(mc::MassChannel) = wait(get(mc.task))
