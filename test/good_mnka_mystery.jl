@@ -31,12 +31,12 @@ function setup_channel(ljh_filename, noise_filename)
 	mc[:filt_value_dc_hist] = Histogram(0:1:20000)
 	mc[:energy_hist] = Histogram(0:1:20000)
 
-	mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
-	mc[:samples_per_record] = LJH.record_nsamples(ljh)
-	mc[:frametime] = LJH.frametime(ljh)
-	#mc[:rise_time_criteria] = (0,0.0006) # from exafs.basic_cuts, but it is in ms there, s here
-	#mc[:pretrig_rms_criteria] = (0.0,30.) # from exafs.basic_cuts
-	#mc[:postpeak_deriv_criteria] = (0.0,250.0) # from exafs.basic_cuts
+	mc[:ljh] = LJHGroup(ljh_filename)
+	mc[:pretrig_nsamples] = LJH.pretrig_nsamples(mc[:ljh])
+	mc[:samples_per_record] = LJH.record_nsamples(mc[:ljh])
+	mc[:frametime] = LJH.frametime(mc[:ljh])
+	mc[:channel_number] = LJH.channel(mc[:ljh])
+
 	mc[:f_3db] = 10000
 	mc[:known_energies] = [5898.801,6490.59] # FeKAlpha and FeKBeta
 
@@ -51,7 +51,7 @@ function setup_channel(ljh_filename, noise_filename)
 	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
 	steps = AbstractStep[
-	GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100)
+	GetPulsesStep(mc[:ljh], [:pulse, :rowcount, :timestamp_posix_usec], 0,100)
 	@perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
 	@threshold pretrig_rms_criteria, postpeak_deriv_criteria = estimate_pretrig_rms_and_postpeak_deriv_criteria(noise_filename, pretrig_nsamples) when length(pulse) > 100
 	@threshold peak_index_criteria = estimate_peak_index_criteria(peak_index) when length(peak_index)>100

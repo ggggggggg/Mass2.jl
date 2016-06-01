@@ -143,6 +143,10 @@ function update_histogram_send!(h::CountRateHistogram, selection, events, timest
 end
 
 function setup_channel(ljh_filename, noise_filename)
+  # TODO:
+  # pass in HDF5 group, need to close it on exit
+  # pass in "init dictionary"?
+
     ljh = LJHGroup(ljh_filename)
 
     mc=MassChannel()
@@ -164,18 +168,17 @@ function setup_channel(ljh_filename, noise_filename)
     mc[:rowcount] = RunningVector(Int)
     mc[:timestamp_posix_usec] = RunningVector(Int)
     mc[:selection_good] = RunningSumBitVector()
-    mc[:filt_value_hist] = CountRateHistogram(10_000_000, 0:1:2000)
-    mc[:energy_hist] = CountRateHistogram(10_000_000, 0:1:2000)
-    mc[:energy_from_pulse_rms_hist] = CountRateHistogram(10_000_000, 0:1:2000)
+    mc[:filt_value_hist] = CountRateHistogram(10_000_000, 0:1:10000)
+    mc[:energy_hist] = CountRateHistogram(10_000_000, 0:1:10000)
+    mc[:energy_from_pulse_rms_hist] = CountRateHistogram(10_000_000, 0:1:10000)
 
     mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
     mc[:samples_per_record] = LJH.record_nsamples(ljh)
     mc[:frametime] = LJH.frametime(ljh)
     mc[:channel_number] = LJH.channel(ljh)
-    mc[:last_timestamp_checked] = 0.0 # this is updated via a total HACK
+    mc[:last_timestamp_checked] = 0.0 # this is updated via a total HACK, its hardcoded into GetPulsesStep
 
     #metadata
-    mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
     mc[:noise_filename]=ascii(noise_filename)
     mc[:ljh_filename]=ascii(ljh_filename) # h5py can't read UFT8String written by julia
@@ -187,15 +190,8 @@ function setup_channel(ljh_filename, noise_filename)
     isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
     steps = AbstractStep[
-    FromHDF5Step([], Pair[:filter=>"filter/filter", :calibration_pulse_rms_energies=>"calibrations/calibration_pulse_rms_energies",
-    :calibration_pulse_rms_pulseheights=>"calibrations/calibration_pulse_rms_pulseheights",
-     :calibration_filt_value_energies=>"calibrations/calibration_filt_value_energies",
-    :calibration_filt_value_pulseheights=>"calibrations/calibration_filt_value_pulseheights"],
-    mc[:init_hdf5_filename])
     GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100, 0)
     @perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
-    @threshold pretrig_rms_criteria, postpeak_deriv_criteria = estimate_pretrig_rms_and_postpeak_deriv_criteria(noise_filename, pretrig_nsamples) when length(pulse) > 100
-    @threshold peak_index_criteria = estimate_peak_index_criteria(peak_index) when length(peak_index)>100
     @threshold calibration_pulse_rms = calibrate_xy(calibration_pulse_rms_pulseheights, calibration_pulse_rms_energies) when length(peak_index)>0
     @threshold calibration_filt_value = calibrate_xy(calibration_filt_value_pulseheights, calibration_filt_value_energies) when length(peak_index)>0
     @perpulse selection_good = selectfromcriteria(pretrig_rms, pretrig_rms_criteria, peak_index, peak_index_criteria, postpeak_deriv, postpeak_deriv_criteria)
@@ -209,7 +205,9 @@ function setup_channel(ljh_filename, noise_filename)
     Pair[:filter=>"filter/filter", :f_3db=>"filter/f_3db", :frametime=>"filter/frametime", :noise_autocorr=>"filter/noise_autocorr", :average_pulse=>"filter/average_pulse",
     :average_pulse=>"average_pulse",
     :samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
-    :ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename"],
+    :ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename",
+  	:peak_index_criteria=>"selection_criteria/peak_index", :pretrig_rms_criteria=>"selection_criteria/pretrig_rms", :postpeak_deriv_criteria=>"selection_criteria/postpeak_deriv",
+  	:pretrigger_mean_drift_correction_params=>"pretrigger_mean_drift_correction_params"],
     mc[:hdf5_filename])
     MemoryLimitStep(Int(4e6)) # throw error if mc uses more than 4 MB
     FreeMemoryStep()
@@ -218,19 +216,31 @@ function setup_channel(ljh_filename, noise_filename)
     preptasks!(mc)
     mc
 end
-begin
-rmf = ReferenceMicrocalFiles.dict["good_mnka_mystery"]
-mc = setup_channel(rmf.filename, rmf.noise_filename)
-h5open(mc[:init_hdf5_filename],"w") do h5
-  h5["calibrations/calibration_pulse_rms_energies"] = collect(1:4.0)
-  h5["calibrations/calibration_pulse_rms_pulseheights"] = collect(1:4.0)*1000
-  h5["calibrations/calibration_filt_value_energies"] = collect(1:4.0)
-  h5["calibrations/calibration_filt_value_pulseheights"] = collect(1:4.0)*1000
-  filter = zeros(mc[:samples_per_record])
-  filter[div(end,2)]=1
-  h5["filter/filter"] = filter
-  end
+function init(mc::MassChannel, init_hdf5_filename, channel_number::Integer)
+  mc[:init_hdf5_filename] = init_hdf5_filename
+  groupname = "chan$channel_number"
+  h5open(mc[:init_hdf5_filename],"r") do h5
+    grp = h5[groupname]
+    mc[:calibration_pulse_rms_energies] = read(grp["calibrations/calibration_pulse_rms_energies"])
+    mc[:calibration_pulse_rms_pulseheights] = read(grp["calibrations/calibration_pulse_rms_pulseheights"])
+    mc[:calibration_filt_value_dc_energies] = read(grp["calibrations/calibration_filt_value_dc_energies"])
+    mc[:calibration_filt_value_dc_pulseheights] = read(grp["calibrations/calibration_filt_value_dc_pulseheights"])
+    mc[:filter] = read(grp["filter/filter"])
+    mc[:pretrigger_mean_drift_correction_params] = LinearDriftCorrect(read(grp["pretrigger_mean_drift_correction_params"])...)
+    mc[:peak_index_criteria] = read(grp["selection_criteria"]["peak_index"])
+    mc[:pretrig_rms_criteria] = read(grp["selection_criteria"]["pretrig_rms"])
+    mc[:postpeak_deriv_criteria] = read(grp["selection_criteria"]["postpeak_deriv"])
+  end# end do
+  return nothing
+end # end init
+# begin
+filename = "/Volumes/Drobo/pulse_data/20160531_transition_metals_emission/20160531_transition_metals_emission_chan13.ljh"
+noise_filename = "/Volumes/Drobopulse_data/20160531_transition_metals_emission_noise/20160531_transition_metals_emission_noise_chan13.ljh"
+mc = setup_channel(filename, noise_filename)
+init_hdf5_filename = "tupac_realtime_init_20160601.hdf5"
+groupname = "chan1"
+init(mc, init_hdf5_filename, groupname)
 schedule(mc)
 sleep(1)
 plantoend(mc)
-end
+# end
