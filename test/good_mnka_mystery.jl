@@ -74,7 +74,8 @@ function setup_channel(ljh_filename, noise_filename)
 	:average_pulse=>"average_pulse",
 	:samples_per_record=>"samples_per_record", :frametime=>"frametime", :pretrig_nsamples=>"pretrig_nsamples",
 	:ljh_filename=>"ljh_filename", :noise_filename=>"noise_filename",
-	:peak_index_criteria=>"selection_criteria/peak_index", :pretrig_rms_criteria=>"selection_criteria/pretrig_rms", :postpeak_deriv_criteria=>"selection_criteria/postpeak_deriv"],
+	:peak_index_criteria=>"selection_criteria/peak_index", :pretrig_rms_criteria=>"selection_criteria/pretrig_rms", :postpeak_deriv_criteria=>"selection_criteria/postpeak_deriv",
+	:pretrigger_mean_drift_correction_params=>"pretrigger_mean_drift_correction_params"],
 	mc[:hdf5_filename])
 	MemoryLimitStep(Int(4e6)) # throw error if mc uses more than 4 MB
 	FreeMemoryStep()

@@ -4,10 +4,12 @@ using KernelDensity, Distributions, Optim
 
 abstract PerPulseTransformation
 
+
 immutable LinearDriftCorrect <: PerPulseTransformation
     indicator_median::Float64
     param::Float64
 end
+Base.write(h5::HDF5.HDF5File, path::ASCIIString, dc::LinearDriftCorrect) = h5[path] = Float64[dc.indicator_median,dc.param]
 uvhist(edges, y) = UnivariateKDE(edges, convert(Array{Float64,1},hist(y,edges)[2]))
 density(h::UnivariateKDE) = h.density
 edges(h::UnivariateKDE) = h.x
