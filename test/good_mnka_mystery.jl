@@ -43,8 +43,8 @@ function setup_channel(ljh_filename, noise_filename)
 	#metadata
 	mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
-	mc[:noise_filename]=noise_filename
-	mc[:ljh_filename]=ljh_filename
+	mc[:noise_filename]=ascii(noise_filename)
+	mc[:ljh_filename]=ascii(ljh_filename) # h5py can't read UFT8String written by julia
 	mc[:name] = "summarize and filter test"
 	mc[:hdf5_filename] = "$(splitext(ljh_filename)[1])_jl.hdf5"
 	mc[:oncleanfinish] = markhdf5oncleanfinish
@@ -132,4 +132,5 @@ h5open(mc[:hdf5_filename]) do h5
 	@test read(h5["selection_criteria/peak_index"]) == mc[:peak_index_criteria]
 	@test read(h5["selection_criteria/pretrig_rms"]) == mc[:pretrig_rms_criteria]
 	@test read(h5["selection_criteria/postpeak_deriv"]) == mc[:postpeak_deriv_criteria]
+	@test length(h5["filt_value"]) == length(mc[:filt_value])
 end
