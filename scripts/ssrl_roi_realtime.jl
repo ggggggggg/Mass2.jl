@@ -177,8 +177,8 @@ function setup_channel(ljh_filename, noise_filename)
     #metadata
     mc[:calibration_nextra] = 1 # when finding peaks, how many peaks other than the largest n to include when assigning peaks to energies
 
-    mc[:noise_filename]=noise_filename
-    mc[:ljh_filename]=ljh_filename
+    mc[:noise_filename]=ascii(noise_filename)
+    mc[:ljh_filename]=ascii(ljh_filename) # h5py can't read UFT8String written by julia
     mc[:name] = "summarize and filter test"
     mc[:hdf5_filename] = "$(splitext(ljh_filename)[1])_jl.hdf5"
     mc[:init_hdf5_filename] = "$(splitext(ljh_filename)[1])_init_jl.hdf5"

@@ -120,10 +120,16 @@ wait(t)
 mc=masschannels[13];
 
 wait(mc)
-@assert get(mc.task).state == :done
-@assert seen(mc[:energy_hist])==length(mc[:selection_good])
-@assert seen(mc[:filt_value_hist])==length(mc[:selection_good])
-@assert seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:energy_hist])<sum(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_hist])<sum(mc[:selection_good])
-@assert 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_dc_hist])<sum(mc[:selection_good])
+@test get(mc.task).state == :done
+@test seen(mc[:energy_hist])==length(mc[:selection_good])
+@test seen(mc[:filt_value_hist])==length(mc[:selection_good])
+@test seen(mc[:filt_value_dc_hist])==length(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:energy_hist])<sum(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_hist])<sum(mc[:selection_good])
+@test 0.8*sum(mc[:selection_good])<counted(mc[:filt_value_dc_hist])<sum(mc[:selection_good])
+
+h5open(mc[:hdf5_filename]) do h5
+	@test read(h5["selection_criteria/peak_index"]) == mc[:peak_index_criteria]
+	@test read(h5["selection_criteria/pretrig_rms"]) == mc[:pretrig_rms_criteria]
+	@test read(h5["selection_criteria/postpeak_deriv"]) == mc[:postpeak_deriv_criteria]
+end
