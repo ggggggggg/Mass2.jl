@@ -23,6 +23,7 @@ function MATTER_watcher(masschannels, exitchannel, setup_channel_func, maxchanne
 				last_started_analyzing_fname = ljhname
 				println("Starting analysis of $ljhname with noise from $last_noise_filename")
 				t0 = time()
+				sleep(2) # wait for LJH files to exist, a bit hacky
 				channums = LJHUtil.allchannels(ljhname)
 				channums = channums[1:min(maxchannels,length(channums))]
 				ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]

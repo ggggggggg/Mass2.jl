@@ -234,6 +234,7 @@ type GetPulsesStep{T} <: AbstractStep
 end
 inputs(s::GetPulsesStep) = Symbol[]
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
+	LJH.update_num_records(s.pulse_source)
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
 	pulses, rowcounts, timestamps = get_data_rowcount_timestamp(s.pulse_source[r])
