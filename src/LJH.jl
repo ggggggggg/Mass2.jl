@@ -21,7 +21,11 @@ function ljh_get_header_dict(io::IO)
         elseif startswith(line, "#")
             continue
         else
-            a,b=split(line,":")
+            splitline=split(line,":")
+            if length(splitline) != 2
+              continue
+            end
+            a,b = splitline
             headerdict[strip(a)]=strip(b)
         end
     end
