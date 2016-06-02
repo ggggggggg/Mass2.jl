@@ -1,6 +1,7 @@
 using RunningVectors
 import JLD: JldGroup, JldFile, JldDataset, HDF5Dataset
 import Base: keys, length, values, getindex, setindex!, get, haskey
+import DataStructures
 const DONETHRU_MAX = typemax(Int)-1
 
 abstract AbstractStep
@@ -243,7 +244,12 @@ GetPulsesStep(a,b,c,d) = GetPulsesStep(a,b,c,d,0)
 inputs(s::GetPulsesStep) = Symbol[]
 posix_time() = convert(Int, time()*1000000)
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
+	ljh_num_records_old = length(s.pulse_source)	
 	LJH.update_num_records(s.pulse_source)
+	ljh_num_records_new = length(s.pulse_source)
+	if ljh_num_records_old==ljh_num_records_new
+		LJH.watch(s.pulse_source,5) # if there are no new pulses, wait until the ljh file on disk changes, timeout 5 seconds
+	end
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
 	pulses, rowcounts, timestamps = get_data_rowcount_timestamp(s.pulse_source[r])
@@ -635,8 +641,8 @@ function end_when_all_steps_do_no_work(workdone_last, exitchannel, task)
 	return nothing
 end
 
-Base.schedule(mc::MassChannel) = schedule(mc.task.value)
-plantoend(mc::MassChannel) = schedule(mc.endertask.value) # need the .value since I'm using Nullable tasks
+Base.schedule(mc::MassChannel) = @schedule try wait(schedule(get(mc.task))) end # this is to supress printing of error messages for failed tasks
+plantoend(mc::MassChannel) = !isnull(mc.endertask) && schedule(get(mc.endertask)) 
 function debug(mc)
 	println("failed on step index $(mc.nextstepind)")
 	debug(mc.nextstepind, mc)
@@ -645,4 +651,36 @@ function debug(mc)
 end
 dostep!(i, mc::MassChannel) = dostep!(mc.steps[i], mc)
 debug(i, mc::MassChannel) = debug(mc.steps[i], mc)
-Base.wait(mc::MassChannel) = wait(get(mc.task))
+"Base.wait(mc::MassChannel) = wait(get(mc.task))"
+Base.wait(mc::MassChannel) = !isnull(mc.task) && wait(get(mc.task))
+"status(mc::MassChannel) returns a symbol representing the state of mc.task, eg :done"
+function status(mc::MassChannel) 
+	if isnull(mc.task)
+		return :nulltask
+	else
+		return get(mc.task).state
+	end
+end
+"status(d::Dict) wants `d` to contain MassChannels, returns a Dictionary containining counts of symbols representing the state of mc.stae, eg:done"
+status(d::Dict) = DataStructures.counter(map(status, values(d))).map
+"ndone(mc, key) returns the length of `mc[key]`, or zero if `mc` has failed or lacks the key"
+ndone(mc, key) = status(mc) in [:queued, :done] && haskey(mc.d, key) ? length(mc[key]) : 0
+"ndone(masschannels::Dict, key) sums the value of `ndone(mc,key)` for `mc` in `values(masschanels)`"
+ndone(masschannels::Dict, key) = sum([ndone(mc,key) for mc in values(masschannels)])
+"print_progress(masschannels::Dict, k1=:filt_value, k2=:ljh) call"
+function print_progress(masschannels::Dict, k1=:filt_value, k2=:ljh) 
+    d = ndone(masschannels, k1)
+    a = ndone(masschannels, k2)
+    println(@sprintf("%0.2g/%0.2g = %0.2f%% done", d,a,100*d/a))
+end
+"channels_by_status(masschannels::Dict) return a Dictionary mapping status symbol to a vector of channel numbers. Useful for finding failed channels."
+function channels_by_status(masschannels::Dict)
+    d = Dict{Symbol,Vector{Int}}()
+    for (channel_number,mc) in masschannels
+        s = status(mc)
+        v = get(d,s,Int[])
+        push!(v,channel_number)
+        d[s]=v
+    end
+    d
+end

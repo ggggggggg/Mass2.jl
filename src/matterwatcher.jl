@@ -22,13 +22,13 @@ function MATTER_watcher(masschannels, exitchannel, setup_channel_func, maxchanne
 				end
 				last_started_analyzing_fname = ljhname
 				println("Starting analysis of $ljhname with noise from $last_noise_filename")
-				t0 = time()
 				sleep(2) # wait for LJH files to exist, a bit hacky
+				t0 = time()
 				channums = LJHUtil.allchannels(ljhname)
 				channums = channums[1:min(maxchannels,length(channums))]
 				ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]
 				noise_filenames = [LJHUtil.fnames(last_noise_filename,channum) for channum in channums]
-				for i in eachindex(channums)
+				for (i, channum) in enumerate(channums)
 					masschannels[channums[i]] = setup_channel_func(ljh_filenames[i], noise_filenames[i])
 				end
 				tf = time()
@@ -51,16 +51,16 @@ function MATTER_watcher(masschannels, exitchannel, setup_channel_func, maxchanne
 	end
 end
 
-"masschannels, watcher_exitchannel, watcher_task = schedule_MATTER_watcher(setup_channel_func, maxchannels=1000)
-setup_channel_func(ljh_filename, noise_filename) should be a function that returns a MassChannel designed to analyze those files
-maschannels is an `Int` that limits the maximum number of channels to analyze
+"`masschannels, watcher_exitchannel, watcher_task = schedule_MATTER_watcher(setup_channel_func, maxchannels=1000)`
+`setup_channel_func(ljh_filename, noise_filename)` should be a function that returns a `MassChannel`, designed to analyze the given files.
+`maxchannels` is an `Int` that limits the maximum number of channels to analyze
 Launches MATTER_watcher in a task. It will monitor sentinel_file_path for changes. It stores the name
 of files that contain the text `noise` or `.noi` as noise files, then starts analysis on any other files, using
 the last seen noise file as the noise. When writing stops, or when a new file starts being written it
 plans to end the analysis steps. This means that when all work has finished, the analysis tasks will end.
-masschannels is a dict channel_number->masschannel object for the currently analyzing files
-watcher_exitchannel will cause the MATTER_watcher task to end upon put!(watcher_exitchannel,1) (or any other int)
-watcher_task is the task executing MATTER_watcher"
+`masschannels` is a Dictionary channel_number->`MassChannel` for the currently analyzing files
+`watcher_exitchannel` will cause the MATTER_watcher task to end upon `put!(watcher_exitchannel,1)` (or any other `Int`)
+`watcher_task` is the task executing MATTER_watcher"
 function schedule_MATTER_watcher(setup_channel_func, maxchannels=1000)
 	masschannels = Dict()
 	exitchannel = Channel{Int}(1)
