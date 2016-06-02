@@ -51,7 +51,7 @@ function setup_channel(ljh_filename, noise_filename)
 	isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
 	steps = AbstractStep[
-	GetPulsesStep(mc[:ljh], [:pulse, :rowcount, :timestamp_posix_usec], 0,100)
+	GetPulsesStep(mc[:ljh], [:pulse, :rowcount, :timestamp_posix_usec], 0,100,0,false) # the false is for analyzing files on disk that aren't being written
 	@perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
 	@threshold pretrig_rms_criteria, postpeak_deriv_criteria = estimate_pretrig_rms_and_postpeak_deriv_criteria(noise_filename, pretrig_nsamples) when length(pulse) > 100
 	@threshold peak_index_criteria = estimate_peak_index_criteria(peak_index) when length(peak_index)>100
@@ -135,3 +135,5 @@ h5open(mc[:hdf5_filename]) do h5
 	@test read(h5["selection_criteria/postpeak_deriv"]) == mc[:postpeak_deriv_criteria]
 	@test length(h5["filt_value"]) == length(mc[:filt_value])
 end
+
+# failing because I'm watching the LJH file for changes, and it doesn't change
