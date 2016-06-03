@@ -37,10 +37,9 @@ runningendof(x) = typemax(Int)
 runningendof(r::AbstractRunningVector) = endof(AbstractRunningVector)
 available(r::AbstractRunningVector) = r.offset+1:length(r)
 
-function freeuntil!(r::AbstractRunningVector, i::Int) 
+function freeuntil!(r::AbstractRunningVector, i::Int)
 	r.offset >= i && return r
-	i > length(r) && error("trying to free past existing data in, length(r) = $(length(r)), i=$i")
-	todelete = i-r.offset
+	todelete = min(length(r.d),i-r.offset)
 	deleteat!(r.d, 1:todelete)
 	r.offset = i
 	r
@@ -64,7 +63,7 @@ function Base.setindex!(r::AbstractRunningSumVector, v, inds)
 end
 Base.sum(r::AbstractRunningSumVector) = r.sum
 
-function Base.show(io::IO, r::AbstractRunningVector) 
+function Base.show(io::IO, r::AbstractRunningVector)
 	print(io, string(typeof(r)))
 	print(io, " length=$(length(r)), offset=$(r.offset)")
 end

@@ -1,10 +1,11 @@
 using Mass2
 
+srand(hash("mockpluses.jl"))
 pg = TupacLikeTwoExponentialPulseGenerator(Int, Normal(1000,0.5))
-getcleanpulse(pg,1000) 
+getcleanpulse(pg,1000)
 gettriggeredpulse!(pg,10)
 
-function compute_whitenoise_filter(pulse, selection_good) 
+function compute_whitenoise_filter(pulse, selection_good)
 	filter = mean(pulse[selection_good])
 	filter -= mean(filter) # 0 average
 	normalization = (maximum(filter)-minimum(filter))./dot(filter, filter)

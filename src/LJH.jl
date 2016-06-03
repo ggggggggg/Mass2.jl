@@ -21,7 +21,11 @@ function ljh_get_header_dict(io::IO)
         elseif startswith(line, "#")
             continue
         else
-            a,b=split(line,":")
+            splitline=split(line,":")
+            if length(splitline) != 2
+              continue
+            end
+            a,b = splitline
             headerdict[strip(a)]=strip(b)
         end
     end
@@ -170,6 +174,8 @@ num_columns(g::LJHGroup) = (assert(length(fieldvalue(g, :num_columns))==1);g.ljh
 num_rows(g::LJHGroup) = (assert(length(fieldvalue(g, :num_rows))==1);g.ljhfiles[1].num_rows)
 filenames(g::LJHGroup) = [f.filename for f in g.ljhfiles]
 lengths(g::LJHGroup) = g.lengths
+"watch(g::LJHGroup, timeout_s) calls `watch_file` on the last LJH file in `g`, passes `timeout_s` through."
+watch(g::LJHGroup, timeout_s) = watch_file(last(g.ljhfiles).filename, timeout_s)
 "examine the underlying LJHFiles to determine if any grew. If the last one grew, update `g.lengths`, otherwise throw an error"
 function update_num_records(g::LJHGroup)
     old_lengths = copy(g.lengths)

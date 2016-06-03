@@ -11,3 +11,4 @@ PyPlot
 Requires
 ZMQ
 LsqFit
+DataStructures
