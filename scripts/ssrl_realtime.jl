@@ -10,13 +10,13 @@ type CountRateHistogram <: AbstractHistogram
   posix_timestamp_usec_bin_edges::Range{Int}
   hists::RunningVector{Histogram}
   x::FloatRange{Float64} # bins of the histograms in hists
+  countedname::ASCIIString
 end
 
 "`posix_timestamp_usec_bin_edges` should always start at 0 (this should be an inner constructor?)"
-function CountRateHistogram(posix_timestamp_usec_bin_step,x)
+function CountRateHistogram(posix_timestamp_usec_bin_step,x, countedname)
   posix_timestamp_usec_bin_edges = 0:posix_timestamp_usec_bin_step:typemax(Int64)
-  h = CountRateHistogram(posix_timestamp_usec_bin_edges, RunningVector(Vector{Histogram}(), 0), x)
-  h
+  h = CountRateHistogram(posix_timestamp_usec_bin_edges, RunningVector(Vector{Histogram}(), 0), x, countedname)
 end
 "update_histogram!(h::CountRateHistogram, selection, events, timestamps) adds the values in `events[selection]`
 to the `h`, adding to the appropriate entry in `hists` based on `timestamps`. returns nothing.
@@ -26,8 +26,8 @@ function update_histogram!(h::CountRateHistogram, selection, events, timestamps,
   if length(selection) == 0 # if the input arrays are empty, return early
     return donethru(h)
   end
-  last_timestamp_checked = max(last_timestamp_checked, last(timestamps))
-
+  #last_timestamp_checked = max(last_timestamp_checked, last(timestamps)
+  last_timestamp_checked = last(timestamps)
   j_hi = 0
   while true
     if length(available(h.hists)) >=1 # figure out what timestamp range we're interested in
@@ -64,7 +64,7 @@ function update_histogram!(h::CountRateHistogram, selection, events, timestamps,
 end
 
 function donethru(h::CountRateHistogram)
-  if length(h.hists) == 0
+  if length(available(h.hists)) == 0
     0
   else
     h.hists[end].seen
@@ -75,7 +75,7 @@ tstep = 1000000 # usec
 Nstep = 10
 Npoints = 1000000
 tfirst = 8000000000
-crh = CountRateHistogram(tstep, 0:1:1000)
+crh = CountRateHistogram(tstep, 0:1:1000, "test")
 
 
 events = ones(Npoints);
@@ -103,6 +103,7 @@ channel number; bin edges; counts; total counts seen; timestamps of start and en
 function send_crh(channel_number::Integer, crh, i)
   h = crh.hists[i]
   # last argument is SNDMORE, if true, it builds up a multipart message
+  ZMQ.send(socket, crh.countedname, true)  
   ZMQ.send(socket, "$channel_number", true)
   ZMQ.send(socket, repr(bin_edges(h)), true)
   ZMQ.send(socket, repr(counts(h)), true)
@@ -142,15 +143,29 @@ function update_histogram_send!(h::CountRateHistogram, selection, events, timest
   return nothing
 end
 
+"setup_channel(ljh_filename, noise_filename) should return a `MassChannel`"
 function setup_channel(ljh_filename, noise_filename)
   # TODO:
   # pass in HDF5 group, need to close it on exit
   # pass in "init dictionary"?
 
-    ljh = LJHGroup(ljh_filename)
-
     mc=MassChannel()
+    mc[:ljh] = LJHGroup(ljh_filename)
+    mc[:pretrig_nsamples] = LJH.pretrig_nsamples(mc[:ljh])
+    mc[:samples_per_record] = LJH.record_nsamples(mc[:ljh])
+    mc[:frametime] = LJH.frametime(mc[:ljh])
+    mc[:channel_number] = LJH.channel(mc[:ljh])
+    mc[:last_timestamp_checked] = 0.0 # this is updated via a total HACK, its hardcoded into GetPulsesStep
 
+    # look for an init_hdf5 file, extract some values into init_dict
+    # if init_dict is empty, get(mc.task) should show fail with a somewhat descriptive error 
+    init_dict = get_init_dict(mc[:channel_number])
+    if isempty(init_dict)
+	return mc
+    end
+    for (k,v) in init_dict
+	mc[k]=v
+    end
     mc[:pretrig_mean] = RunningVector(Float32)
     mc[:pretrig_rms] = RunningVector(Float32)
     mc[:pulse_average] = RunningVector(Float32)
@@ -168,17 +183,9 @@ function setup_channel(ljh_filename, noise_filename)
     mc[:rowcount] = RunningVector(Int)
     mc[:timestamp_posix_usec] = RunningVector(Int)
     mc[:selection_good] = RunningSumBitVector()
-    mc[:filt_value_hist] = CountRateHistogram(10_000_000, 0:1:10000)
-    mc[:energy_hist] = CountRateHistogram(10_000_000, 0:1:10000)
-    mc[:energy_from_pulse_rms_hist] = CountRateHistogram(10_000_000, 0:1:10000)
-
-    mc[:pretrig_nsamples] = LJH.pretrig_nsamples(ljh)
-    mc[:samples_per_record] = LJH.record_nsamples(ljh)
-    mc[:frametime] = LJH.frametime(ljh)
-    mc[:channel_number] = LJH.channel(ljh)
-    mc[:last_timestamp_checked] = 0.0 # this is updated via a total HACK, its hardcoded into GetPulsesStep
-
-    #metadata
+    mc[:filt_value_hist] = CountRateHistogram(10_000_000, 0:0.5:1500,"filt_value")
+    mc[:energy_hist] = CountRateHistogram(10_000_000, 0:0.5:1500,"energy_from_filt_value")
+    mc[:energy_from_pulse_rms_hist] = CountRateHistogram(10_000_000, 0:0.5:1500,"energy_from_pulse_rms")
 
     mc[:noise_filename]=ascii(noise_filename)
     mc[:ljh_filename]=ascii(ljh_filename) # h5py can't read UFT8String written by julia
@@ -190,10 +197,10 @@ function setup_channel(ljh_filename, noise_filename)
     isfile(mc[:hdf5_filename]) && rm(mc[:hdf5_filename])
 
     steps = AbstractStep[
-    GetPulsesStep(ljh, [:pulse, :rowcount, :timestamp_posix_usec], 0,100, 0)
+    GetPulsesStep(mc[:ljh], [:pulse, :rowcount, :timestamp_posix_usec], 0,100, 0)
     @perpulse pretrig_mean, pretrig_rms, pulse_average, pulse_rms, rise_time, postpeak_deriv, peak_index, peak_value, min_value = compute_summary(pulse, pretrig_nsamples, frametime)
     @threshold calibration_pulse_rms = calibrate_xy(calibration_pulse_rms_pulseheights, calibration_pulse_rms_energies) when length(peak_index)>0
-    @threshold calibration_filt_value = calibrate_xy(calibration_filt_value_pulseheights, calibration_filt_value_energies) when length(peak_index)>0
+    @threshold calibration_filt_value = calibrate_xy(calibration_filt_value_dc_pulseheights, calibration_filt_value_dc_energies) when length(peak_index)>0 # calibration from filt value dc should work fine for filt value, probably still change this in future
     @perpulse selection_good = selectfromcriteria(pretrig_rms, pretrig_rms_criteria, peak_index, peak_index_criteria, postpeak_deriv, postpeak_deriv_criteria)
     @perpulse filt_value, filt_phase = filter5lag(filter, pulse)
     @perpulse energy = apply_calibration(calibration_filt_value, filt_value)
@@ -216,31 +223,38 @@ function setup_channel(ljh_filename, noise_filename)
     preptasks!(mc)
     mc
 end
-function init(mc::MassChannel, init_hdf5_filename, channel_number::Integer)
-  mc[:init_hdf5_filename] = init_hdf5_filename
-  groupname = "chan$channel_number"
-  h5open(mc[:init_hdf5_filename],"r") do h5
-    grp = h5[groupname]
-    mc[:calibration_pulse_rms_energies] = read(grp["calibrations/calibration_pulse_rms_energies"])
-    mc[:calibration_pulse_rms_pulseheights] = read(grp["calibrations/calibration_pulse_rms_pulseheights"])
-    mc[:calibration_filt_value_dc_energies] = read(grp["calibrations/calibration_filt_value_dc_energies"])
-    mc[:calibration_filt_value_dc_pulseheights] = read(grp["calibrations/calibration_filt_value_dc_pulseheights"])
-    mc[:filter] = read(grp["filter/filter"])
-    mc[:pretrigger_mean_drift_correction_params] = LinearDriftCorrect(read(grp["pretrigger_mean_drift_correction_params"])...)
-    mc[:peak_index_criteria] = read(grp["selection_criteria"]["peak_index"])
-    mc[:pretrig_rms_criteria] = read(grp["selection_criteria"]["pretrig_rms"])
-    mc[:postpeak_deriv_criteria] = read(grp["selection_criteria"]["postpeak_deriv"])
-  end# end do
-  return nothing
-end # end init
-# begin
-filename = "/Volumes/Drobo/pulse_data/20160531_transition_metals_emission/20160531_transition_metals_emission_chan13.ljh"
-noise_filename = "/Volumes/Drobopulse_data/20160531_transition_metals_emission_noise/20160531_transition_metals_emission_noise_chan13.ljh"
-mc = setup_channel(filename, noise_filename)
-init_hdf5_filename = "tupac_realtime_init_20160601.hdf5"
-groupname = "chan1"
-init(mc, init_hdf5_filename, groupname)
-schedule(mc)
-sleep(1)
-plantoend(mc)
-# end
+get_init_hdf5_filename_groupname(channel_number) = "ssrl_realtime_init_20160602.hdf5","chan$channel_number"
+function get_init_dict(channel_number::Integer)
+	init_hdf5_filename, groupname = get_init_hdf5_filename_groupname(channel_number)
+	d = Dict{Symbol, Any}()
+	h5open(init_hdf5_filename,"r") do h5
+	    if !exists(h5,groupname)
+		return nothing
+	    end
+	    grp = h5[groupname]
+	    d[:calibration_pulse_rms_energies] = read(grp["calibrations/calibration_pulse_rms_energies"])
+	    d[:calibration_pulse_rms_pulseheights] = read(grp["calibrations/calibration_pulse_rms_pulseheights"])
+	    d[:calibration_filt_value_dc_energies] = read(grp["calibrations/calibration_filt_value_dc_energies"])
+	    d[:calibration_filt_value_dc_pulseheights] = read(grp["calibrations/calibration_filt_value_dc_pulseheights"])
+	    d[:filter] = read(grp["filter/filter"])
+	    d[:pretrigger_mean_drift_correction_params] = LinearDriftCorrect(read(grp["pretrigger_mean_drift_correction_params"])...)
+	    d[:peak_index_criteria] = read(grp["selection_criteria"]["peak_index"])
+	    d[:pretrig_rms_criteria] = read(grp["selection_criteria"]["pretrig_rms"])
+	    d[:postpeak_deriv_criteria] = read(grp["selection_criteria"]["postpeak_deriv"])	
+	    return nothing
+	end # do
+	return d
+end # get_init_dict
+
+masschannels, watcher_exitchannel, watcher_task = schedule_MATTER_watcher(setup_channel)
+
+# # begin
+# filename = "/Volumes/Drobo/pulse_data/20160531_transition_metals_emission/20160531_transition_metals_emission_chan13.ljh"
+# noise_filename = "/Volumes/Drobopulse_data/20160531_transition_metals_emission_noise/20160531_transition_metals_emission_noise_chan13.ljh"
+# mc = setup_channel(filename, noise_filename)
+# init_hdf5_filename = "tupac_realtime_init_20160601.hdf5"
+# init(mc, init_hdf5_filename)
+# schedule(mc)
+# sleep(1)
+# plantoend(mc)
+# # end
