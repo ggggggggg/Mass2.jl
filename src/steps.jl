@@ -237,18 +237,20 @@ type GetPulsesStep{T} <: AbstractStep
 	pulse_source::T
 	outputs::Vector{Symbol}
 	previous_pulse_index::Int # used to keep track of location in an ljh file for example
-	max_pulses_per_step::Int
-	last_timestamp_checked::Int
-	watch_file::Bool
+	max_pulses_per_step::Int # max number of pulses to grab each call to dostep!
+	last_timestamp_checked::Int # should represent the timestamp for which no new pulse will arrive earlier, problematic with a file
+	watch_file::Bool # if true, will use watch_file to yield task when possible
 end
-GetPulsesStep(a,b,c,d) = GetPulsesStep(a,b,c,d,0,true)
+GetPulsesStep(a,b,c,d,e=0,f=true) = GetPulsesStep(a,b,c,d,e,f)
 inputs(s::GetPulsesStep) = Symbol[]
 posix_time() = convert(Int, time()*1000000)
 function dostep!(s::GetPulsesStep{LJHGroup},c::MassChannel)
 	LJH.update_num_records(s.pulse_source)
 	ljh_num_records_new = length(s.pulse_source)
 	if ljh_num_records_new==s.previous_pulse_index && s.watch_file
-		LJH.watch(s.pulse_source,5) # if there are no new pulses, wait until the ljh file on disk changes, timeout 5 seconds
+		LJH.watch(s.pulse_source,2) # if there are no new pulses, wait until the ljh file on disk changes, timeout 2 seconds
+		# this is an attempt to use less than 100% of the cpu if possible
+		LJH.update_num_records(s.pulse_source)
 	end
 	r = s.previous_pulse_index+1:min(s.previous_pulse_index+s.max_pulses_per_step, length(s.pulse_source))
 	length(r)==0 && (return r)
