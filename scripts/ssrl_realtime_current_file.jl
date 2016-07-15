@@ -254,14 +254,17 @@ else
   ljhname = "put filename here"
   writingbool = false
 end
+println("***********************")
+@show ljhname
+@show maxchannels = 240
 masschannels = Dict()
 t0 = time()
 channums = LJHUtil.allchannels(ljhname)
 channums = channums[1:min(maxchannels,length(channums))]
 ljh_filenames = [LJHUtil.fnames(ljhname,channum) for channum in channums]
-noise_filenames = [LJHUtil.fnames(last_noise_filename,channum) for channum in channums]
+noise_filenames = ljh_filenames
 for (i, channum) in enumerate(channums)
-  masschannels[channums[i]] = setup_channel_func(ljh_filenames[i], noise_filenames[i])
+  masschannels[channums[i]] = setup_channel(ljh_filenames[i], noise_filenames[i])
 end
 tf = time()
 println("setup $(length(channums)) channels in $(tf-t0) seconds")
