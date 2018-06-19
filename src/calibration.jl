@@ -11,7 +11,7 @@ function CalibrationSpline1D(indicator, known_energies)
 	CalibrationSpline1D(calc_spline(indicator, known_energies), known_energies, indicator, true)
 end
 iscalibrated(c::AbstractCalibration) = c.iscalibrated
-donethru(c::AbstractCalibration) = iscalibrated(c)?DONETHRU_MAX:0
+donethru(c::AbstractCalibration) = iscalibrated(c) ? DONETHRU_MAX : 0
 apply_calibration(c::CalibrationSpline1D, estimator) = apply_spline(c.spline, estimator)
 function PyPlot.plot(cal::CalibrationSpline1D)
 	figure()
