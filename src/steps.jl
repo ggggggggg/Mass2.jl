@@ -87,7 +87,7 @@ outputs(s::AbstractStep) = s.outputs
 inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in inputs(s)]
 outputs(s::AbstractStep, c::MassChannel) = [c[q] for q in outputs(s)]
 inputs(s::AbstractStep, c::MassChannel, r::UnitRange{Int}) =
-[isperpulse(q,c)?c[q][r]:c[q] for q in s.inputs]
+[isperpulse(q,c) ? c[q][r] : c[q] for q in s.inputs]
 perpulse_inputs_key(s::AbstractStep, c::MassChannel) = inputs(s)[[isperpulse(q,c) for q in inputs(s)]]
 perpulse_outputs_key(s::AbstractStep, c::MassChannel) = outputs(s)[[isperpulse(q,c) for q in outputs(s)]]
 perpulse_inputs(s::AbstractStep, c::MassChannel) = [c[q] for q in perpulse_inputs_key(s,c)]
@@ -508,7 +508,7 @@ function earliest_needed_index(mc::MassChannel, parent::Symbol, g::Graphs.Abstra
 	eni = [earliest_needed_index(mc,q,parent) for q in children_sym]
 	#println([(q,parent,earliest_needed_index(mc,q,parent)) for q in children_sym])
 	filter!(x->x != nothing, eni)
-	isempty(eni)?length(mc[parent])+1:minimum(eni)
+	isempty(eni) ? length(mc[parent])+1 : minimum(eni)
 end
 
 "graph_out_next_neighbors(v,g::Graphs.AbstractGraph) Find all the next nearest neighbors of vertex `v` in `g`. Used because
@@ -643,7 +643,7 @@ function end_when_all_steps_do_no_work(workdone_last, exitchannel, task)
 	return nothing
 end
 
-Base.schedule(mc::MassChannel) = @schedule try wait(schedule(get(mc.task))) end # this is to supress printing of error messages for failed tasks
+Base.schedule(mc::MassChannel) = @schedule try wait(schedule(get(mc.task))) catch; end # this is to supress printing of error messages for failed tasks
 plantoend(mc::MassChannel) = !isnull(mc.endertask) && schedule(get(mc.endertask))
 function debug(mc)
 	println("failed on step index $(mc.nextstepind)")

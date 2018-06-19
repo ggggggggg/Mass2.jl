@@ -40,7 +40,7 @@ function two_exponential_pulses(
 	for (ap, amp) in zip(arrival_point, amplitude)
 		@inbounds for i = 1:points
 			t = i-ap
-			pulse[i] += t>0.0?amp*k*(exp(-t/rise_points)-exp(-t/fall_points)):0.0
+			pulse[i] += t>0.0 ? amp*k*(exp(-t/rise_points)-exp(-t/fall_points)) : 0.0
 		end
 	end
 	pulse

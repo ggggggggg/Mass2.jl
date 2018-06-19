@@ -105,7 +105,7 @@ getopenfilelimit() = parse(Int,split(split(readall(`ulimit -a`),"\n")[6])[end])
 	@schedule begin
 		tasks = [mc.task.value for (ch, mc) in masschannels]
 		for task in tasks # wait for all tasks to finish
-			try wait(task) end # wait rethrows errors from failed tasks, we can always look at them later
+			try wait(task) catch; end # wait rethrows errors from failed tasks, we can always look at them later
 		end
 		ndone = sum([task.state==:done for task in tasks])
 		nfailed = sum([task.state==:failed for task in tasks])
